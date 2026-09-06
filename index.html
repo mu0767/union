@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10131b">
+  <title>UNION · 유니온 레이드 1단계</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="data.js" defer></script>
+  <script src="characters.js" defer></script>
+  <script src="shared-config.js" defer></script>
+  <script src="boss-repository.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><div class="brand"><span class="logo">U</span> UNION <span class="divider">/</span><span class="brand-sub">RAID RECORDS</span></div><span class="status"><i></i> 유니온 기록실</span></header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">NIKKE · UNION RAID</p><h1>유니온 레이드<span>.</span></h1><p class="subtitle">보스 속성별 지휘관 딜량과 다양한 덱 조합을 한눈에.</p></div><label class="import-button" for="file">↥ union_raid.txt 불러오기<input id="file" type="file" accept=".txt,text/plain"></label></section>
+    <p id="message" role="status" hidden></p>
+    <nav class="tabs page-tabs" aria-label="페이지 선택"><button data-page="records" class="active" aria-pressed="true" aria-controls="round-records">딜량 기록</button><button data-page="bosses" aria-pressed="false" aria-controls="boss-panel">보스 정보</button><a href="planner.html">레이드 운영</a></nav>
+    <section id="boss-panel" class="raid-bosses" aria-label="단계별 보스 정보" hidden>
+      <div class="server-controls"><button id="save-bosses" type="button">보스 정보 저장</button><button id="reload-bosses" type="button">최신 정보 불러오기</button><button id="discard-bosses" type="button">현재 단계 입력 취소</button><p id="server-status" role="status">보스 정보 연결 중…</p></div>
+      <div class="tabs" role="group" aria-label="레이드 단계 선택"><button data-round="1" class="active" aria-pressed="true">1단계</button><button data-round="2" aria-pressed="false">2단계</button><button data-round="3" aria-pressed="false">3단계</button><button data-round="4" aria-pressed="false">4단계</button></div>
+      <div id="boss-list" class="boss-list" aria-live="polite"></div>
+    </section>
+    <div id="round-records">
+    <section class="panel">
+      <div class="panel-heading"><div><p class="eyebrow">COMMANDER OVERVIEW</p><h2>1단계 · 지휘관 전투 기록 <span id="count" class="count"></span></h2></div><span class="hint">이름을 누르면 편성을 확인할 수 있습니다</span></div>
+      <div class="toolbar"><div class="tabs" role="group" aria-label="1단계 속성 선택"><button data-stage="all" class="active" aria-pressed="true">전체</button><button data-stage="1" aria-pressed="false">철갑</button><button data-stage="2" aria-pressed="false">수냉</button><button data-stage="3" aria-pressed="false">작열</button><button data-stage="4" aria-pressed="false">전격</button><button data-stage="5" aria-pressed="false">풍압</button></div><div class="filters"><input type="search" id="search" placeholder="지휘관 이름 검색" aria-label="지휘관 이름 검색"><select id="sort" aria-label="정렬"><option value="original">원본 순서</option><option value="damage">딜량 높은 순</option><option value="level">레벨 높은 순</option><option value="name">이름순</option></select></div></div>
+      <button id="multipliers-toggle" class="multiplier-toggle" type="button" aria-expanded="false" aria-controls="damage-multipliers">딜량 배수</button>
+      <section id="damage-multipliers" class="damage-multipliers" hidden aria-label="보스별 딜량 배수"><div id="multiplier-fields"></div><button id="multipliers-reset" type="button">초기화</button></section>
+      <div class="table-scroll"><table><caption class="sr-only">유니온 레이드 1단계 사람별 레벨 및 속성별 편성 딜량</caption><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div><div id="empty" hidden>검색 결과가 없습니다. 다른 이름으로 검색해 보세요.</div>
+      <div class="panel-footer"><span><i class="legend"></i> 각 칸: 등록 덱별 딜량</span><span id="source">SOURCE · union_raid.txt</span></div>
+    </section>
+    <p class="note">유니온 레이드 1단계: 철갑 · 수냉 · 작열 · 전격 · 풍압. 미보유는 합계에서 제외합니다. 동일한 기록도 원본 그대로 표시하며, 딜량은 천 단위 쉼표로 표시합니다.</p>
+    </div>
+    <footer><span>UNION <b> / </b> DAMAGE ARCHIVE</span><span>승리의 여신: NIKKE · 비공식 기록 뷰어</span></footer>
+  </main>
+  <dialog id="detail"><div class="dialog-heading"><div><p class="eyebrow">COMMANDER DETAIL</p><h2 id="detail-title"></h2></div><button id="close" aria-label="상세 닫기">✕</button></div><div id="detail-body"></div></dialog>
+</body>
+</html>

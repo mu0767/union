@@ -1,0 +1,60 @@
+# 유니온 딜량 보드
+
+현재 기본 공유 저장은 사이트에 함께 배포되는 관리형 저장소를 사용합니다. 방문자는 배포된 페이지 링크만 열면 되며 Google 설정·로그인·설치가 필요 없습니다. 보스 정보를 3~5초 간격으로 자동 동기화하고, 변경한 필드만 충돌 검사 후 저장합니다. 화면 전체 새로고침은 하지 않습니다.
+
+Google Sheets 구현은 선택 가능한 대안으로 [Apps Script 안내](apps-script/README.md)에 남겨 두었습니다. 현재 배포에 이 설정은 필요하지 않습니다. 기존 Python 서버 관련 설명은 별도 `planner.html` 운영 기능에 해당합니다.
+
+관리형 배포는 `worker/index.js`의 얇은 API와 D1 저장소를 사용하며, 기존 `{rounds,revisions}` JSON을 유지합니다. 데이터베이스 version 조건부 UPDATE가 경쟁 저장을 감지하면 최신 데이터에 수정 필드만 다시 병합합니다. 마이그레이션은 `db/schema.ts`에서 생성한 `drizzle/`에 있습니다. 배포 파일은 `build-shared-site.py`로 기존 화면과 자산을 포함해 생성합니다. 일반 사용자가 실행할 명령은 없습니다.
+
+`index.html`을 더블클릭하면 실행됩니다. 설치나 서버 없이 사용하며, 인터넷 연결도 필요하지 않습니다.
+
+- 지휘관 16명의 싱크로 레벨과 1~5번의 편성별 딜량, 각 번호의 합계
+- 이름 검색, 번호 선택, 레벨·딜량·이름 정렬
+- 이름 클릭 시 편성 원문과 딜량 상세 표시
+- UTF-8 TXT 불러오기 (현재 화면에만 적용, 새로고침하면 기본 데이터로 복원)
+
+유니온 레이드 1단계의 1~5번은 각각 철갑, 수냉, 작열, 전격, 풍압입니다. 원본 번호와 딜량은 그대로 유지합니다. 번호마다 편성 3개가 있으며, 합계는 해당 편성의 기록된 딜량을 더한 값입니다(미보유 제외). 전체 탭의 딜량 정렬은 1~5번 합계 기준이고, 개별 번호 탭에서는 해당 번호 합계 기준입니다. 편성 문자열은 공식 캐릭터 이름과 대조해 5명으로 분리합니다. 모르는 편성이 들어오면 원문을 그대로 표시합니다.
+
+## 캐릭터 초상화
+
+[공식 블라블라링크 니케 목록](https://www.blablalink.com/shiftyspad/nikke-list?from=H5_30monthanni&lang=ko)에서 15명의 이름과 초상화를 대조했습니다. `characters.js`에는 이름, 로컬 이미지 경로, 공식 CDN 원본 주소가 기록되어 있습니다. `assets/portraits/`에 이미지를 저장해 오프라인에서도 표시합니다. 상단에는 편성별 초상화가, 개인 상세에는 초상화와 미보유 표시가 나옵니다. 캐릭터 및 이미지 권리는 원 권리자에게 있습니다.
+
+## 기본 데이터 변경
+
+`union_raid.txt`를 UTF-8로 수정한 뒤 현재 폴더에서 아래 명령을 실행하고 페이지를 새로고침합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\update-data.ps1
+```
+
+파일 형식: 이름 → `싱크로 641` → `1` → 편성 이름과 딜량을 3쌍 → `2`~`5`도 동일 → 다음 사람. 딜량은 정수 또는 천 단위 쉼표 숫자를 지원합니다.
+
+## GitHub Pages 배포
+
+1. GitHub 저장소를 만들고 `index.html`, `styles.css`, `app.js`, `data.js`, `characters.js`와 `assets/` 폴더를 루트에 업로드합니다.
+2. 저장소 Settings → Pages → Build and deployment에서 Deploy from a branch를 선택합니다.
+3. 업로드한 브랜치(일반적으로 main)와 `/ (root)`를 선택하고 저장합니다.
+4. 배포 완료 후 `https://계정명.github.io/저장소명/`에서 접속합니다.
+
+이후 데이터를 갱신할 때는 생성한 `data.js`도 함께 업로드합니다. 현재는 로컬 파일만 생성되어 있으며 GitHub에 푸시하거나 배포하지 않았습니다.
+
+## 레이드 운영 및 최적화
+
+`planner.html`은 참가자별 파티, 플레이 가능 시간, 실제 공격 결과와 잠금을 관리합니다. 계산은 `solver.py`의 OR-Tools CP-SAT 모델이 수행합니다. 목표는 라운드 진행, 마지막 도달 라운드의 유효 딜, 최종보스 딜, 오버딜 순으로 처리합니다.
+
+처음 한 번 Python 3.10 이상에서 설치합니다.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+그 다음 서버를 실행합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-server.ps1
+```
+
+브라우저에서 `http://localhost:8787/planner.html`을 엽니다. 관리자 비밀번호는 최초 실행 때 `.server/admin-key.txt`에 만들어집니다. 브라우저에 비밀번호를 저장하지 않습니다.
+
+공용 인터넷 주소로 운영하려면 `Dockerfile`을 지원하는 호스팅에 배포하고 영구 볼륨을 `/data`에 연결하며 `ADMIN_PASSWORD` 환경변수를 설정합니다. GitHub Pages는 정적 호스팅이라 서버 저장과 OR-Tools 실행을 제공하지 않습니다.
