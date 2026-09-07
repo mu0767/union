@@ -122,7 +122,7 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   // The real raid has damage variance. Do not spend minutes proving a difference
   // smaller than the user's accepted tolerance. Preserve a cleanup budget so a
   // high-damage incumbent can never be returned with absurd normal-boss overkill.
-  const targetGranularity=Math.max(1,tolerance||1);
+  const requestedGranularity=Math.max(1,tolerance||1);
   const cleanupReserve=Math.min(75,Math.max(20,maxSeconds*0.25));
   const stageBudget=Math.min(30,Math.max(5,maxSeconds*0.10));
   const optimization={stage:'SKIPPED',target:'SKIPPED',waste:'SKIPPED'};
@@ -133,9 +133,6 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   const bestStage=Math.round(result.value(clear[0])+result.value(clear[1])+result.value(clear[2]));
   const targetRound=bestStage+1;
 
-  // Lock the best stage found even if its optimality proof timed out. We still
-  // optimize the useful damage and clean up waste instead of returning a raw
-  // stage-search incumbent.
   model.add(stageExpr.equals(bestStage));
   hintFrom(result);
 
@@ -146,12 +143,14 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   const targetMax=targetRound===4
     ? finalCandidates.reduce((total,c)=>total+c.damage,0)
     : normal.filter(b=>b.round===targetRound).reduce((total,b)=>total+actualRemaining(b),0);
+  // Never let the practical band exceed 1% of the reachable target scale. This
+  // keeps tiny fixtures and late-raid scraps precise while real multi-billion
+  // damage still uses the user's 1B tolerance.
+  const targetGranularity=Math.min(requestedGranularity,Math.max(1,Math.floor(targetMax/100)));
   const maxBand=Math.max(0,Math.floor(targetMax/targetGranularity));
   const targetBand=model.newIntVar(0,maxBand,'target_band');
   model.add(targetExpr.ge(targetBand.times(targetGranularity)));
 
-  // Maximize damage by tolerance-sized bands. Two plans inside the same band are
-  // practically equivalent, so cleanup/resource efficiency decides between them.
   const targetBudget=Math.max(1,remainingSeconds()-cleanupReserve);
   const targetResult=solvePhase(
     targetRound===4?'2/3 최종보스 딜 구간 최적화 중…':`2/3 R${targetRound} 유효 딜 구간 최적화 중…`,
@@ -164,9 +163,6 @@ export async function solveRaidCpSat(state, progress = () => {}) {
     throw new Error('목표 딜 최적화에서 실행 가능한 해를 유지하지 못했습니다.');
   }
 
-  // Always reserve time for cleanup. Freeze only the best practical damage band,
-  // not the exact raw damage, so a slightly smaller but much more efficient plan
-  // wins when the difference is within the accepted tolerance.
   const bestBand=Math.round(result.value(targetBand));
   model.add(targetBand.equals(bestBand));
   hintFrom(result);
