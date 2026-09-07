@@ -15,7 +15,7 @@
 - 허용 오차보다 작은 딜 차이의 완전한 최적성 증명에는 집착하지 않는다.
 - 목표 딜 구간을 유지하면서 일반 라운드의 계획 낭비를 정리한다.
 - greedy로 최종 공격을 추가하지 않는다. 출력 공격은 모두 CP-SAT 해에서 나온다.
-- 최대 5분. GitHub Pages에서는 여러 독립 Web Worker/seed를 병렬 실행해 가장 좋은 전역 해를 선택한다.
+- 기본 최대 60초. GitHub Pages에서는 여러 독립 Web Worker/seed를 병렬 실행해 가장 좋은 전역 해를 선택한다.
 
 ## 과거 문제와 회귀 기준
 
@@ -31,7 +31,7 @@
 ## 현재 구현
 
 - `planner-cpsat-engine.js`: 효율 기반 good-first hint + 전체 후보 전역 CP-SAT + 목표 딜 구간 + 낭비 정리.
-- `planner-optimizer-ui.js`: 최대 5분 병렬 portfolio 탐색. `LEVEL_ATTACK_POWER`를 worker 입력에 전달해 엔진이 화면과 같은 상대 효율 기준을 사용한다.
+- `planner-optimizer-ui.js`: 기본 최대 60초 병렬 portfolio 탐색. `LEVEL_ATTACK_POWER`를 worker 입력에 전달해 엔진이 화면과 같은 상대 효율 기준을 사용한다.
 - 결과 UI는 OPTIMAL 증명 자체보다 “실전 최선해”임을 중심으로 표시한다.
 - 실제 사용 사이트: https://mu0767.github.io/union/planner.html
 
