@@ -1,9 +1,6 @@
 // Browser port of solver.py: CP-SAT constraints and lexicographic objectives.
 // Runs in a dedicated worker, never on the UI thread.
-export async function solveRaid(state, api, progress = () => {}) {
-  const {CpModel,CpSolver,Domain,LinearExpr} = api;
-  const sum = values => LinearExpr.from(LinearExpr.sum(values));
-  const model = new CpModel();
+export async function solveRaid(state, progress = () => {}) {
   const settings=state.settings || {}, duration=Number(settings.attackMinutes);
   const origin=new Date(settings.startAt), end=new Date(settings.endAt), now=new Date(settings.now);
   if (![origin,end,now].every(d=>Number.isFinite(d.getTime())) || end<=origin) throw Error('레이드 시작·종료 시각을 확인해 주세요.');
@@ -38,7 +35,7 @@ export async function solveRaid(state, api, progress = () => {}) {
     }
     return windows;
   }
-  const candidates=[],byUser=new Map(),byNikke=new Map(),byBoss=new Map(),userIntervals=new Map(),allIntervals=[];
+  const candidates=[];
   for(const u of users) {
     if(!Number.isInteger(u.attacksLeft)||u.attacksLeft<0||u.attacksLeft>3)throw Error(`${u.name}: 남은 공격권은 0~3이어야 합니다.`);
     const windows=windowsFor(u);if(!windows.length||!u.attacksLeft)continue;
@@ -49,63 +46,29 @@ export async function solveRaid(state, api, progress = () => {}) {
       for(const b of bosses) {
         if(p.element!==b.element || (b.round!==4&&(actual.get(b.id)||0)>=b.hp))continue;
         const damage=b.round===4?(p.finalDamage??p.normalDamage):p.normalDamage;
-        const i=candidates.length,x=model.newBoolVar(`x${i}`),start=model.newIntVarFromDomain(Domain.fromIntervals(windows),`s${i}`),finish=model.newIntVar(0,horizon,`e${i}`);
-        const interval=model.newOptionalIntervalVar(start,duration,finish,x,`i${i}`);
-        const c={x,start,finish,user:u,party:p,boss:b,damage,windows};candidates.push(c);
-        group(byUser,u.id,c);group(byBoss,b.id,c);group(userIntervals,u.id,interval);allIntervals.push(interval);
-        for(const n of p.nikkes)group(byNikke,`${u.id}:${n}`,c);
+        candidates.push({user:u,party:p,boss:b,damage,windows});
       }
     }
-  }
-  for(const u of users)model.add(sum((byUser.get(u.id)||[]).map(c=>c.x)).le(u.attacksLeft));
-  for(const cs of byNikke.values())model.add(sum(cs.map(c=>c.x)).le(1));
-  for(const intervals of userIntervals.values())model.addNoOverlap(intervals);
-  if(!settings.simultaneous)model.addNoOverlap(allIntervals);
-  const clear=new Map(),effective=new Map(),overkill=new Map(),clearTime=new Map(),totals=new Map();
-  const maxDamage=candidates.reduce((s,c)=>s+c.damage,0)+[...actual.values()].reduce((s,n)=>s+n,0);
-  if(!Number.isSafeInteger(maxDamage))throw Error('딜량 합계가 지원 범위를 초과했습니다.');
-  for(const [i,b] of normal.entries()) {
-    const cs=byBoss.get(b.id)||[],total=model.newIntVar(0,Math.max(b.hp,maxDamage),`total${i}`),eff=model.newIntVar(0,b.hp,`eff${i}`),cl=model.newBoolVar(`clear${i}`),over=model.newIntVar(0,maxDamage,`over${i}`),ct=model.newIntVar(0,horizon,`ct${i}`);
-    model.add(total.eq(sum(cs.map(c=>c.x.times(c.damage))).plus(actual.get(b.id)||0)));
-    model.addMinEquality(eff,[total,b.hp]);model.add(total.ge(b.hp)).onlyEnforceIf(cl);model.add(total.le(b.hp-1)).onlyEnforceIf(cl.not());model.add(over.eq(total.minus(eff)));
-    for(const c of cs)model.add(ct.ge(c.finish)).onlyEnforceIf(c.x);
-    clear.set(b.id,cl);effective.set(b.id,eff);overkill.set(b.id,over);clearTime.set(b.id,ct);totals.set(b.id,total);
-  }
-  for(const c of candidates)if(c.boss.round>1)for(const b of normal.filter(b=>b.round===c.boss.round-1)) {
-    model.add(c.x.le(clear.get(b.id)));model.add(c.start.ge(clearTime.get(b.id))).onlyEnforceIf(c.x);
-  }
-  const lockKeys=new Set();
-  for(const lock of state.locks||[]) {
-    const key=JSON.stringify([lock.userId,lock.partyId,lock.bossId]);
-    if(lockKeys.has(key))throw Error('같은 공격이 두 번 잠겨 있습니다.');lockKeys.add(key);
-    const c=candidates.find(c=>c.user.id===lock.userId&&c.party.id===lock.partyId&&c.boss.id===lock.bossId);
-    if(!c)throw Error('잠긴 공격이 불가능합니다. 남은 공격권·사용 니케·가능 시간·보스를 확인해 주세요.');
-    model.add(c.x.eq(1));
-  }
-  const opened=[];
-  for(const round of [1,2,3]) {
-    const flags=normal.filter(b=>b.round===round).map(b=>clear.get(b.id)),flag=model.newBoolVar(`round${round+1}`);
-    for(const f of flags)model.add(flag.le(f));model.add(flag.ge(sum(flags).minus(flags.length-1)));opened.push(flag);
   }
   // Fast browser planner: use the already-built greedy feasible schedule immediately.
   // The full CP-SAT model is intentionally skipped here because proving/improving
   // optimality can take minutes in a browser for a 32-member raid.
   progress('빠른 공격 계획 구성 중…');
-  const damage=new Map(actual),chars=new Map([...used].map(([u,n])=>[u,new Set(n)])),counts=new Map(),selected=[];
+  const damage=new Map(actual),chars=new Map([...used].map(([u,n])=>[u,new Set(n)])),attackCounts=new Map(),selected=[];
   let clock=lower;
   const attackLimit=users.reduce((sum,u)=>sum+u.attacksLeft,0);
   while(selected.length<attackLimit) {
     const round=[1,2,3].find(r=>normal.some(b=>b.round===r&&(damage.get(b.id)||0)<b.hp))||4;
     let pick=null;
     for(const c of candidates) {
-      if(c.boss.round!==round||!c.damage||(counts.get(c.user.id)||0)>=c.user.attacksLeft||c.party.nikkes.some(n=>chars.get(c.user.id)?.has(n)))continue;
+      if(c.boss.round!==round||!c.damage||(attackCounts.get(c.user.id)||0)>=c.user.attacksLeft||c.party.nikkes.some(n=>chars.get(c.user.id)?.has(n)))continue;
       const hp=c.boss.round===4?Infinity:Math.max(0,c.boss.hp-(damage.get(c.boss.id)||0));if(!hp)continue;
       const times=c.windows.map(([a,b])=>Math.max(a,clock)<=b?Math.max(a,clock):Infinity),minute=Math.min(...times);if(!Number.isFinite(minute))continue;
       const score=c.boss.round===4?c.damage:Math.min(hp,c.damage)-Math.max(0,c.damage-hp)*0.01;
       if(!pick||minute<pick.minute||minute===pick.minute&&score>pick.score)pick={...c,minute,score};
     }
     if(!pick)break;
-    selected.push(pick);clock=pick.minute+duration;add(counts,pick.user.id,1);add(damage,pick.boss.id,pick.damage);
+    selected.push(pick);clock=pick.minute+duration;add(attackCounts,pick.user.id,1);add(damage,pick.boss.id,pick.damage);
     if(!chars.has(pick.user.id))chars.set(pick.user.id,new Set());pick.party.nikkes.forEach(n=>chars.get(pick.user.id).add(n));
   }
   const stage=[1,2,3].filter(r=>normal.filter(b=>b.round===r).every(b=>(damage.get(b.id)||0)>=b.hp)).length;
