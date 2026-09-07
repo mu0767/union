@@ -5,7 +5,7 @@ const feasible=s=>s===CpSolverStatus.OPTIMAL||s===CpSolverStatus.FEASIBLE;
 const statusText=s=>s===CpSolverStatus.OPTIMAL?'OPTIMAL':s===CpSolverStatus.FEASIBLE?'FEASIBLE':'UNKNOWN';
 const add=(m,k,v)=>m.set(k,(m.get(k)||0)+v);
 
-export async function solveRaidHybrid(state,progress=()=>{}){
+export async function solveRaidHybrid(state,progress=()=>{},emitPlan=()=>{}){
   const startedAt=Date.now();
   const maxMs=Math.max(1000,Math.min(30000,Number(state.__solverMaxSeconds||30)*1000));
   const deadline=startedAt+maxMs;
@@ -212,6 +212,18 @@ export async function solveRaidHybrid(state,progress=()=>{}){
   progress('로컬 개선 · 라운드 간 swap 정리 중…');
   let local=localSwap(heuristic,8);heuristic=local.sel;
 
+  function materialize(selected,optimization={stage:'HEURISTIC',target:'HEURISTIC',waste:'BEAM+LOCAL'}){
+    const ev=evalPlan(selected),bossOrder=new Map(bosses.map((b,i)=>[b.id,i]));
+    const ordered=[...selected].sort((a,b)=>a.boss.round-b.boss.round||(bossOrder.get(a.boss.id)-bossOrder.get(b.boss.id))||a.user.name.localeCompare(b.user.name));
+    const rem=new Map(bosses.map(b=>[b.id,b.round===4?'infinite':remaining(b)])),counts=new Map();
+    const origin=new Date(state.settings?.startAt||Date.now()),pad=n=>String(n).padStart(2,'0'),iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const attacks=ordered.map(c=>{const before=rem.get(c.boss.id),after=before==='infinite'?'infinite':Math.max(0,before-c.damage),over=before==='infinite'?0:Math.max(0,c.damage-before);rem.set(c.boss.id,after);add(counts,c.user.id,1);return{start:iso(new Date(origin.getTime()+(c.boss.round-1)*3600000)),timeLabel:'',isNow:false,userId:c.user.id,userName:c.user.name,partyId:c.party.id,partyName:c.party.name,nikkes:[...c.party.nikkes],bossId:c.boss.id,bossName:c.boss.name,round:c.boss.round,element:c.boss.element,damage:c.damage,beforeHp:before,afterHp:after,overkill:over,attackNumber:(resultCount.get(c.user.id)||0)+(counts.get(c.user.id)||0)};});
+    const planningWaste=normal.filter(b=>b.round<ev.stage+1).reduce((s,b)=>{const d=ordered.filter(c=>c.boss.id===b.id).reduce((x,c)=>x+c.damage,0);return s+Math.max(0,d-required(b));},0);
+    return{status:'FEASIBLE',summary:{reachedFinal:ev.stage===3,reachedRound:ev.stage+1,attackCount:attacks.length,totalOverkill:attacks.reduce((s,a)=>s+a.overkill,0),planningWaste,damageTolerance:tolerance,targetGranularity:0,targetBand:0,unusedAttacks:users.reduce((s,u)=>s+u.attacksLeft,0)-attacks.length,targetRound:ev.stage+1,targetDamage:ev.target,finalDamage:ev.stage===3?ev.target:0,optimization},attacks,diagnostics:{activeUsers:users.length,candidates:raw.length,totalAttackLimit:users.reduce((s,u)=>s+u.attacksLeft,0),seed:Number(state.__solverSeed)||1,elapsedSeconds:Math.round((Date.now()-startedAt)/1000),searchPolicy:'beam-local-provisional',beamWidth:BEAM,heuristicStage:reached,localSwapPasses:local.passes}};
+  }
+  const provisional=materialize(heuristic);
+  if(provisional.attacks.length)emitPlan(provisional);
+
   progress('CP-SAT 전역 개선 모델 구성 중…');
   const solver=await CpSolver.create();const model=new CpModel('union-raid-hybrid-v2');
   const sum=xs=>xs.reduce((a,x)=>a.plus(x instanceof LinearExpr?x:x.toLinearExpr()),LinearExpr.fromConstant(0));
@@ -236,12 +248,7 @@ export async function solveRaidHybrid(state,progress=()=>{}){
   const stageExpr=sum(clear);let result=solve('전역 개선 1/3 · 도달 라운드 확인 중…',stageExpr,'max',Math.min(3,timeLeft()));
   if(!result||!feasible(result.status)){
     progress('CP-SAT 초기 탐색 실패 · Beam+Local 초기해를 반환합니다.');
-    const ev=evalPlan(heuristic),bossOrder=new Map(bosses.map((b,i)=>[b.id,i]));
-    const selected=[...heuristic].sort((a,b)=>a.boss.round-b.boss.round||(bossOrder.get(a.boss.id)-bossOrder.get(b.boss.id))||a.user.name.localeCompare(b.user.name));
-    const rem=new Map(bosses.map(b=>[b.id,b.round===4?'infinite':remaining(b)])),counts=new Map();const origin=new Date(state.settings?.startAt||Date.now()),pad=n=>String(n).padStart(2,'0'),iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    const attacks=selected.map(c=>{const before=rem.get(c.boss.id),after=before==='infinite'?'infinite':Math.max(0,before-c.damage),over=before==='infinite'?0:Math.max(0,c.damage-before);rem.set(c.boss.id,after);add(counts,c.user.id,1);return{start:iso(new Date(origin.getTime()+(c.boss.round-1)*3600000)),timeLabel:'',isNow:false,userId:c.user.id,userName:c.user.name,partyId:c.party.id,partyName:c.party.name,nikkes:[...c.party.nikkes],bossId:c.boss.id,bossName:c.boss.name,round:c.boss.round,element:c.boss.element,damage:c.damage,beforeHp:before,afterHp:after,overkill:over,attackNumber:(resultCount.get(c.user.id)||0)+(counts.get(c.user.id)||0)};});
-    const planningWaste=normal.filter(b=>b.round<ev.stage+1).reduce((s,b)=>{const d=selected.filter(c=>c.boss.id===b.id).reduce((x,c)=>x+c.damage,0);return s+Math.max(0,d-required(b));},0);
-    return{status:'FEASIBLE',summary:{reachedFinal:ev.stage===3,reachedRound:ev.stage+1,attackCount:attacks.length,totalOverkill:attacks.reduce((s,a)=>s+a.overkill,0),planningWaste,damageTolerance:tolerance,targetGranularity:0,targetBand:0,unusedAttacks:users.reduce((s,u)=>s+u.attacksLeft,0)-attacks.length,targetRound:ev.stage+1,targetDamage:ev.target,finalDamage:ev.stage===3?ev.target:0,optimization:{stage:'HEURISTIC',target:'HEURISTIC',waste:'BEAM+LOCAL'}},attacks,diagnostics:{activeUsers:users.length,candidates:raw.length,totalAttackLimit:users.reduce((s,u)=>s+u.attacksLeft,0),seed:Number(state.__solverSeed)||1,elapsedSeconds:Math.round((Date.now()-startedAt)/1000),searchPolicy:'beam-local-fallback',beamWidth:BEAM,heuristicStage:reached,localSwapPasses:local.passes}};
+    return provisional;
   }
   const bestStage=Math.round(clear.reduce((s,v)=>s+result.value(v),0));model.add(stageExpr.equals(bestStage));for(const c of vars)model.addHint(c.x,result.value(c.x));
   const targetRound=bestStage+1,targetExpr=targetRound===4?sum(vars.filter(c=>c.boss.round===4).map(c=>c.x.times(c.damage))):sum(normal.filter(b=>b.round===targetRound).map(b=>effective.get(b.id)));
