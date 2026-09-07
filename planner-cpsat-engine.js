@@ -1,17 +1,22 @@
 import { CpModel, CpSolver, CpSolverStatus, LinearExpr } from './vendor/cpsat/index.js';
 
 const feasible = status => status === CpSolverStatus.OPTIMAL || status === CpSolverStatus.FEASIBLE;
+const statusText = status => status === CpSolverStatus.OPTIMAL ? 'OPTIMAL' : status === CpSolverStatus.FEASIBLE ? 'FEASIBLE' : 'UNKNOWN';
 
 export async function solveRaidCpSat(state, progress = () => {}) {
   progress('CP-SAT 엔진 로딩 중…');
   const solver = await CpSolver.create();
-  progress('CP-SAT 모델 구성 중…');
+  progress('CP-SAT 전역 모델 구성 중…');
 
   const users=(state.users||[]).filter(u=>u.active&&u.attacksLeft>0);
   const bosses=state.bosses||[];
   const normal=bosses.filter(b=>[1,2,3].includes(b.round));
   const final=bosses.find(b=>b.round===4);
   const tolerance=state.settings?.damageTolerance??1_000_000_000;
+  const maxSeconds=Math.max(1,Math.min(300,Number(state.__solverMaxSeconds??state.settings?.solverMaxSeconds??300)||300));
+  const seed=Math.max(1,Math.floor(Number(state.__solverSeed)||1));
+  const hardware=Math.max(1,Math.floor(Number(globalThis.navigator?.hardwareConcurrency)||1));
+  const solverWorkers=globalThis.crossOriginIsolated===true?Math.min(8,hardware):1;
   if(!Number.isSafeInteger(tolerance)||tolerance<0)throw new Error('허용 딜 오차는 0 이상의 정수여야 합니다.');
   if(normal.length!==15||!final)throw new Error('보스 정보가 올바르지 않습니다.');
 
@@ -24,21 +29,23 @@ export async function solveRaidCpSat(state, progress = () => {}) {
     for(const n of r.nikkes||[])used.get(r.userId).add(n);
   }
 
-  const model=new CpModel('union-raid');
-  // LinearExpr.plus accepts expressions or constants, not raw IntVar/BoolVar.
+  const model=new CpModel('union-raid-global');
   const sum=items=>items.reduce((acc,item)=>acc.plus(
     item instanceof LinearExpr ? item : item.toLinearExpr()
   ),LinearExpr.fromConstant(0));
   const candidates=[];
+  const clearThreshold=boss=>Math.max(0,boss.hp-tolerance-(actual.get(boss.id)||0));
+  const actualRemaining=boss=>Math.max(0,boss.hp-(actual.get(boss.id)||0));
 
   for(const user of users){
+    if(!Number.isInteger(user.attacksLeft)||user.attacksLeft<0||user.attacksLeft>3)throw new Error(`${user.name}: 남은 공격권은 0~3이어야 합니다.`);
     for(const party of user.parties||[]){
       if(!Number.isSafeInteger(party.normalDamage)||party.normalDamage<=0)continue;
-      if(!Array.isArray(party.nikkes)||party.nikkes.length!==5)continue;
+      if(!Array.isArray(party.nikkes)||party.nikkes.length!==5||new Set(party.nikkes).size!==5)continue;
       if(party.nikkes.some(n=>used.get(user.id)?.has(n)))continue;
       for(const boss of bosses){
         if(party.element!==boss.element)continue;
-        if(boss.round!==4&&(actual.get(boss.id)||0)>=boss.hp)continue;
+        if(boss.round!==4&&clearThreshold(boss)===0)continue;
         const damage=boss.round===4?(party.finalDamage??party.normalDamage):party.normalDamage;
         if(!Number.isSafeInteger(damage)||damage<=0)continue;
         const x=model.newBoolVar('x_'+candidates.length);
@@ -62,18 +69,15 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   model.add(clear[1].minus(clear[0]).le(0));
   model.add(clear[2].minus(clear[1]).le(0));
 
+  const assignedByBoss=new Map();
   const effectiveByBoss=new Map();
-  const overVars=[];
   for(const boss of normal){
     const vars=candidates.filter(c=>c.boss.id===boss.id);
     const expr=sum(vars.map(c=>c.x.times(c.damage)));
-    const idx=boss.round-1;
-    const remaining=Math.max(0,boss.hp-(actual.get(boss.id)||0));
-    model.add(expr.ge(clear[idx].times(remaining===0?0:Math.max(1,remaining-tolerance))));
-    const maxPossible=(actual.get(boss.id)||0)+vars.reduce((s,c)=>s+c.damage,0);
-    const over=model.newIntVar(0,Math.max(0,maxPossible-boss.hp),'over_'+boss.id);
-    model.add(over.ge(expr.minus(remaining+tolerance)));
-    overVars.push(over);
+    assignedByBoss.set(boss.id,expr);
+    const required=clearThreshold(boss);
+    model.add(expr.ge(clear[boss.round-1].times(required)));
+    const remaining=actualRemaining(boss);
     const effective=model.newIntVar(0,remaining,'effective_'+boss.id);
     model.add(effective.le(expr));
     effectiveByBoss.set(boss.id,effective);
@@ -87,21 +91,25 @@ export async function solveRaidCpSat(state, progress = () => {}) {
 
   for(const lock of state.locks||[]){
     const match=candidates.find(c=>c.user.id===lock.userId&&c.party.id===lock.partyId&&c.boss.id===lock.bossId);
-    if(match)model.add(match.x.equals(1));
+    if(!match)throw new Error('잠긴 공격 중 현재 조건에서 배치할 수 없는 항목이 있습니다.');
+    model.add(match.x.equals(1));
   }
 
   const stageExpr=sum(clear);
-  const attackExpr=sum(candidates.map(c=>c.x));
-  const overExpr=sum(overVars);
   const finalExpr=sum(candidates.filter(c=>c.boss.round===4).map(c=>c.x.times(c.damage)));
-
-  const solvePhase=(label,seconds,objective,mode)=>{
-    progress(label);
+  const startedAt=Date.now();
+  const remainingSeconds=()=>Math.max(0,(maxSeconds*1000-(Date.now()-startedAt))/1000);
+  const solvePhase=(label,objective,mode)=>{
+    const seconds=remainingSeconds();
+    if(seconds<0.05)return null;
+    progress(`${label} · 최대 ${Math.ceil(seconds)}초 · ${solverWorkers} worker`);
     mode==='max'?model.maximize(objective):model.minimize(objective);
     return solver.solve(model,{
       maxTimeInSeconds:seconds,
-      numWorkers:1,
-      onSolution:s=>progress(label+' · 개선값 '+Math.round(s.objectiveValue).toLocaleString('ko-KR'))
+      numWorkers:solverWorkers,
+      randomSeed:seed,
+      randomizeSearch:true,
+      onSolution:s=>progress(`${label} · 현재값 ${Math.round(s.objectiveValue).toLocaleString('ko-KR')}`)
     });
   };
   const hintFrom=result=>{
@@ -110,77 +118,75 @@ export async function solveRaidCpSat(state, progress = () => {}) {
     for(const v of clear)model.addHint(v,result.value(v));
   };
 
-  let allOptimal=true;
-  const optimize=(label,seconds,objective,mode,previous)=>{
-    const next=solvePhase(label,seconds,objective,mode);
-    allOptimal=allOptimal&&next.status===CpSolverStatus.OPTIMAL;
-    return feasible(next.status)?next:previous;
-  };
-  let result=optimize('1/4 도달 라운드 최적화 중…',5,stageExpr,'max');
-  if(!result)throw new Error('CP-SAT이 실행 가능한 공격 계획을 찾지 못했습니다.');
+  const optimization={stage:'SKIPPED',target:'SKIPPED',waste:'SKIPPED'};
+  let result=solvePhase('1/3 최대 도달 라운드 증명 중…',stageExpr,'max');
+  if(!result||!feasible(result.status))throw new Error('CP-SAT이 실행 가능한 공격 계획을 찾지 못했습니다.');
+  optimization.stage=statusText(result.status);
   const bestStage=Math.round(result.value(clear[0])+result.value(clear[1])+result.value(clear[2]));
-  model.add(stageExpr.equals(bestStage));hintFrom(result);
-
-  // AGENTS.md: progress, then damage to the final/last reachable round.
-  // Early overkill must never block a stronger attack on that target.
   const targetRound=bestStage+1;
-  const targetVars=normal.filter(b=>b.round===targetRound).map(b=>effectiveByBoss.get(b.id));
-  const targetExpr=targetRound===4?finalExpr:sum(targetVars);
-  const targetValue=result=>Math.round(targetRound===4
-    ?candidates.filter(c=>c.boss.round===4).reduce((s,c)=>s+c.damage*result.value(c.x),0)
-    :targetVars.reduce((s,v)=>s+result.value(v),0));
-  result=optimize(targetRound===4?'2/4 최종보스 딜 최대화 중…':`2/4 마지막 도달 R${targetRound} 유효 딜 최대화 중…`,15,targetExpr,'max',result);
-  const bestTarget=targetValue(result);
-  model.add(targetExpr.ge(bestTarget));hintFrom(result);
 
-  result=optimize('3/4 목표 딜 유지 · 오버딜 감소 중…',8,overExpr,'min',result);
-  const bestOver=Math.round(overVars.reduce((s,v)=>s+result.value(v),0));
-  model.add(overExpr.le(bestOver));hintFrom(result);
-  // Reserve compatible parties for spare tickets while choosing the core.
-  // Otherwise a core party can consume characters needed by two spare parties.
-  const reserves=[];
-  for(const user of users){
-    const own=candidates.filter(c=>c.user.id===user.id);
-    const available=own.filter(c=>c.boss.round===bestStage+1);
-    for(const party of user.parties||[]){
-      const candidate=available.find(c=>c.party.id===party.id);
-      if(candidate)reserves.push({...candidate,x:model.newBoolVar('reserve_'+reserves.length)});
+  // Never spend time on a lower-priority objective until the higher-priority one
+  // has been proven optimal. If the five-minute budget expires here, return the
+  // best stage-feasible plan and mark it as unproven instead of pretending that
+  // a secondary objective was optimized.
+  let targetExpr=null;
+  if(result.status===CpSolverStatus.OPTIMAL&&remainingSeconds()>0.05){
+    model.add(stageExpr.equals(bestStage));
+    hintFrom(result);
+    targetExpr=targetRound===4
+      ? finalExpr
+      : sum(normal.filter(b=>b.round===targetRound).map(b=>effectiveByBoss.get(b.id)));
+    const targetResult=solvePhase(
+      targetRound===4?'2/3 최종보스 딜 최적해 증명 중…':`2/3 R${targetRound} 유효 딜 최적해 증명 중…`,
+      targetExpr,'max'
+    );
+    if(targetResult&&feasible(targetResult.status)){
+      result=targetResult;
+      optimization.target=statusText(targetResult.status);
     }
-    const combined=[...own,...reserves.filter(c=>c.user.id===user.id)];
-    model.add(sum(combined.map(c=>c.x)).le(user.attacksLeft));
-    for(const name of new Set(combined.flatMap(c=>c.party.nikkes)))model.add(sum(combined.filter(c=>c.party.nikkes.includes(name)).map(c=>c.x)).le(1));
   }
-  result=optimize('4/4 남은 공격권 편성 확보 중…',5,attackExpr.plus(sum(reserves.map(c=>c.x))),'max',result);
 
-  progress('최선 계획 정리 중…');
+  let planningWaste=null;
+  if(optimization.target==='OPTIMAL'&&remainingSeconds()>0.05){
+    const bestTarget=Math.round(result.value(targetExpr));
+    model.add(targetExpr.equals(bestTarget));
+    hintFrom(result);
+
+    const wasteVars=[];
+    for(const boss of normal){
+      if(boss.round>targetRound)continue;
+      const expr=assignedByBoss.get(boss.id);
+      const vars=candidates.filter(c=>c.boss.id===boss.id);
+      const maxAssigned=vars.reduce((s,c)=>s+c.damage,0);
+      if(!maxAssigned)continue;
+      // Earlier cleared rounds only need to reach HP - tolerance. Any planned
+      // damage above that threshold consumes resources that could have been used
+      // later. On the target round, only true HP overkill is waste because useful
+      // damage up to the actual remaining HP is the phase-2 objective.
+      const baseline=boss.round<targetRound?clearThreshold(boss):actualRemaining(boss);
+      const waste=model.newIntVar(0,Math.max(0,maxAssigned-baseline),'waste_'+boss.id);
+      model.add(waste.ge(expr.minus(baseline)));
+      wasteVars.push(waste);
+    }
+    if(wasteVars.length){
+      const wasteExpr=sum(wasteVars);
+      const wasteResult=solvePhase('3/3 목표 유지 · 낭비 딜 최소화 증명 중…',wasteExpr,'min');
+      if(wasteResult&&feasible(wasteResult.status)){
+        result=wasteResult;
+        optimization.waste=statusText(wasteResult.status);
+        planningWaste=Math.round(wasteResult.value(wasteExpr));
+      }
+    }else{
+      optimization.waste='OPTIMAL';
+      planningWaste=0;
+    }
+  }
+
+  progress('전역 최적화 결과 정리 중…');
   const chosen=candidates.filter(c=>result.value(c.x)>0.5);
-  // Preserve the target-damage core, then spend spare tickets on the remaining
-  // round. Spare attacks must not be forced into already cleared bosses.
-  const plannedDamage=new Map(actual),plannedCounts=new Map();
-  const plannedUsed=new Map([...used].map(([id,names])=>[id,new Set(names)]));
-  const record=c=>{
-    add(plannedDamage,c.boss.id,c.damage);add(plannedCounts,c.user.id,1);
-    if(!plannedUsed.has(c.user.id))plannedUsed.set(c.user.id,new Set());
-    c.party.nikkes.forEach(n=>plannedUsed.get(c.user.id).add(n));
-  };
-  chosen.forEach(record);
-  const cleared=b=>(plannedDamage.get(b.id)||0)>=Math.max(1,b.hp-tolerance);
-  let extraAttacks=0;
-  while(true){
-    const round=[1,2,3].find(r=>normal.some(b=>b.round===r&&!cleared(b)))||4;
-    let pick=null;
-    const reserved=reserves.filter(c=>result.value(c.x)>0.5);
-    const preferred=reserved.filter(c=>c.boss.round===round&&(round===4||!cleared(c.boss))&&(plannedCounts.get(c.user.id)||0)<c.user.attacksLeft&&!c.party.nikkes.some(n=>plannedUsed.get(c.user.id)?.has(n)));
-    for(const c of preferred.length?preferred:candidates){
-      if(c.boss.round!==round||(round!==4&&cleared(c.boss)))continue;
-      if((plannedCounts.get(c.user.id)||0)>=c.user.attacksLeft||c.party.nikkes.some(n=>plannedUsed.get(c.user.id)?.has(n)))continue;
-      const hp=round===4?Infinity:Math.max(0,c.boss.hp-(plannedDamage.get(c.boss.id)||0));
-      const useful=Math.min(hp,c.damage),over=Math.max(0,c.damage-hp);
-      if(!pick||useful>pick.useful||useful===pick.useful&&over<pick.over)pick={...c,useful,over};
-    }
-    if(!pick)break;
-    chosen.push(pick);record(pick);extraAttacks++;
-  }
+  const plannedDamage=new Map(actual);
+  for(const c of chosen)add(plannedDamage,c.boss.id,c.damage);
+  const cleared=b=>(plannedDamage.get(b.id)||0)>=Math.max(0,b.hp-tolerance);
   const reachedStage=[1,2,3].filter(r=>normal.filter(b=>b.round===r).every(cleared)).length;
   const bossOrder=new Map(bosses.map((b,i)=>[b.id,i]));
   chosen.sort((a,b)=>a.boss.round-b.boss.round||(bossOrder.get(a.boss.id)-bossOrder.get(b.boss.id))||a.user.name.localeCompare(b.user.name));
@@ -207,25 +213,43 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   });
 
   const finalDamage=chosen.filter(c=>c.boss.round===4).reduce((s,c)=>s+c.damage,0);
-  const targetDamage=reachedStage===3?finalDamage:normal.filter(b=>b.round===reachedStage+1).reduce((total,b)=>{
-    const hp=Math.max(0,b.hp-(actual.get(b.id)||0));
+  const reachedRound=reachedStage+1;
+  const targetDamage=reachedStage===3?finalDamage:normal.filter(b=>b.round===reachedRound).reduce((total,b)=>{
+    const hp=actualRemaining(b);
     const damage=chosen.filter(c=>c.boss.id===b.id).reduce((s,c)=>s+c.damage,0);
     return total+Math.min(hp,damage);
   },0);
+  if(planningWaste==null){
+    planningWaste=normal.filter(b=>b.round<=reachedRound).reduce((total,b)=>{
+      const damage=chosen.filter(c=>c.boss.id===b.id).reduce((s,c)=>s+c.damage,0);
+      const baseline=b.round<reachedRound?clearThreshold(b):actualRemaining(b);
+      return total+Math.max(0,damage-baseline);
+    },0);
+  }
+  const provenOptimal=optimization.stage==='OPTIMAL'&&optimization.target==='OPTIMAL'&&optimization.waste==='OPTIMAL';
   return {
-    status:allOptimal&&!extraAttacks?'OPTIMAL':'FEASIBLE',
+    status:provenOptimal?'OPTIMAL':'FEASIBLE',
     summary:{
       reachedFinal:reachedStage===3,
-      reachedRound:reachedStage+1,
+      reachedRound,
       attackCount:attacks.length,
       totalOverkill:attacks.reduce((s,a)=>s+a.overkill,0),
+      planningWaste,
       damageTolerance:tolerance,
       unusedAttacks:users.reduce((s,u)=>s+u.attacksLeft,0)-attacks.length,
-      targetRound:reachedStage+1,
+      targetRound:reachedRound,
       targetDamage,
-      finalDamage
+      finalDamage,
+      optimization
     },
     attacks,
-    diagnostics:{activeUsers:users.length,candidates:candidates.length,totalAttackLimit:users.reduce((s,u)=>s+u.attacksLeft,0)}
+    diagnostics:{
+      activeUsers:users.length,
+      candidates:candidates.length,
+      totalAttackLimit:users.reduce((s,u)=>s+u.attacksLeft,0),
+      solverWorkers,
+      seed,
+      elapsedSeconds:Math.round((Date.now()-startedAt)/1000)
+    }
   };
 }
