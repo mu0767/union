@@ -1,4 +1,4 @@
-import { solveRaidHybrid } from './planner-hybrid-engine-v2.js';
+import { solveRaidHybrid } from './planner-hybrid-engine-v3.js';
 
 self.onmessage = async ({data}) => {
   try {
