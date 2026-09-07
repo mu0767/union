@@ -192,8 +192,20 @@ async function solveRaid(state, progress = () => {}) {
       if(c.boss.round!==round||!c.damage||(attackCounts.get(c.user.id)||0)>=c.user.attacksLeft||c.party.nikkes.some(n=>chars.get(c.user.id)?.has(n)))continue;
       const hp=c.boss.round===4?Infinity:Math.max(0,c.boss.hp-(damage.get(c.boss.id)||0));if(!hp)continue;
       const times=c.windows.map(([a,b])=>Math.max(a,clock)<=b?Math.max(a,clock):Infinity),minute=Math.min(...times);if(!Number.isFinite(minute))continue;
-      const score=c.boss.round===4?c.damage:Math.min(hp,c.damage)-Math.max(0,c.damage-hp)*0.01;
-      if(!pick||minute<pick.minute||minute===pick.minute&&score>pick.score)pick={...c,minute,score};
+      const over=c.boss.round===4?0:Math.max(0,c.damage-hp);
+      const effective=c.boss.round===4?c.damage:Math.min(hp,c.damage);
+      const kills=c.boss.round!==4&&c.damage>=hp;
+      // Fast priority: earliest feasible time, then finishing blows with the least overkill,
+      // otherwise maximize useful damage without wasting a large party.
+      const rank=c.boss.round===4
+        ? [0,-c.damage]
+        : kills
+          ? [0,over]
+          : [1,-effective];
+      const better=!pick||minute<pick.minute||minute===pick.minute&&(
+        rank[0]<pick.rank[0]||rank[0]===pick.rank[0]&&rank[1]<pick.rank[1]
+      );
+      if(better)pick={...c,minute,rank};
     }
     if(!pick)break;
     selected.push(pick);clock=pick.minute+duration;add(attackCounts,pick.user.id,1);add(damage,pick.boss.id,pick.damage);
