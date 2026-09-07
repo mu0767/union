@@ -118,7 +118,7 @@ function renderLive(){
   const progress=raidProgress();$('current-bosses').innerHTML=`<div class="summary-card"><small>현재 진행</small><strong>${progress.currentRound===4?'최종보스':`Round ${progress.currentRound}`}</strong></div>`+progress.bosses.map(b=>`<div class="summary-card"><small>${escapeHTML(b.name)} · ${b.element}</small><strong>${b.remaining==='infinite'?'∞':displayNumber(b.remaining)}</strong></div>`).join('');
   $('lock-list').innerHTML=state.locks.length?state.locks.map(l=>compactEntry(l,'lock')).join(''):'<div class="empty-card">잠긴 공격이 없습니다.</div>';
   $('result-list').innerHTML=state.results.length?state.results.map(r=>compactEntry(r,'result')).join(''):'<div class="empty-card">완료된 공격이 없습니다.</div>';
-  renderPlan(state.plan?.attacks?.filter(a=>a.isNow),$('now-list'));
+  renderPlan(state.plan?.attacks?.filter(a=>a.isNow&&!planResultForAttack(a)),$('now-list'));
 }
 function compactEntry(entry,type){const u=state.users.find(x=>x.id===entry.userId),p=u?.parties.find(x=>x.id===entry.partyId),b=state.bosses.find(x=>x.id===entry.bossId);return`<div class="compact-item"><span>${escapeHTML(entry.userName||u?.name||'삭제된 유저')} · ${escapeHTML(entry.partyName||p?.name||'삭제된 파티')} → ${escapeHTML(entry.bossName||b?.name||'삭제된 보스')}${entry.damage!=null?` · ${displayNumber(entry.damage)}`:''}</span>${type==='lock'?`<button data-remove-lock="${entry.id}">잠금 해제</button>`:'<small>완료 확정</small>'}</div>`}
 function parsePlanTimeSlots(){
@@ -288,7 +288,8 @@ function renderSchedule(){
   if(!plan){$('plan-summary').innerHTML='';renderPlan(completed.length?completed:null);return}
   const s=plan.summary;
   $('plan-summary').innerHTML=[['예상 도달',s.reachedFinal?'최종보스':`Round ${s.reachedRound}`],[s.reachedFinal?'최종보스 딜':`R${s.reachedRound} 유효 딜`,s.targetDamage==null?'재계산 필요':displayNumber(s.targetDamage)],['공격 사용',`${s.attackCount}회`],['총 오버딜',displayNumber(s.totalOverkill)],['보스별 허용 오차',`±${displayNumber(s.damageTolerance??0)}`]].map(x=>`<div class="summary-card"><small>${x[0]}</small><strong>${x[1]}</strong></div>`).join('');
-  try{renderPlan([...completed,...plan.attacks])}catch(error){$('plan-list').className='plan-list empty-card';$('plan-list').textContent=`시간표 표시 실패: ${error.message}`;throw error}
+  const remainingPlanAttacks=plan.attacks.filter(a=>!planResultForAttack(a));
+  try{renderPlan([...completed,...remainingPlanAttacks])}catch(error){$('plan-list').className='plan-list empty-card';$('plan-list').textContent=`시간표 표시 실패: ${error.message}`;throw error}
 }
 function renderSettings(){const f=$('raid-settings');Object.entries(state.settings).forEach(([k,v])=>{if(f.elements[k])f.elements[k].value=String(v)});$('planner-boss-body').innerHTML=state.bosses.map(b=>`<tr data-boss-id="${b.id}"><td>${b.round===4?'최종':b.round}</td><td><input name="bossName" value="${escapeHTML(b.name)}" required maxlength="80"></td><td><select name="bossElement">${ELEMENTS.map(e=>`<option${e===b.element?' selected':''}>${e}</option>`).join('')}</select></td><td><input name="bossHp" inputmode="numeric" value="${b.hp==='infinite'?'무한':displayNumber(b.hp)}" required></td></tr>`).join('')}
 function renderAll(){renderLive();renderSchedule()}
