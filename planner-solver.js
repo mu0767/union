@@ -119,7 +119,7 @@ export async function solveRaid(state, api, progress = () => {}) {
   function capture(){return {stage:Math.round(solver.value(stages)),selected:candidates.filter(c=>solver.booleanValue(c.x)).map(c=>({...c,minute:solver.value(c.start)}))};}
   async function optimize(objective,maximize,label,seconds) {
     progress(label);if(maximize)model.maximize(objective);else model.minimize(objective);
-    const status=solver.statusName(await solver.solve(model,{maxTimeInSeconds:seconds,numSearchWorkers:4}));
+    const status=solver.statusName(await solver.solve(model,{maxTimeInSeconds:seconds,numSearchWorkers:1}));
     console.info('CP-SAT',label,status,solver.wallTime);
     if(status==='MODEL_INVALID')throw Error('계산 모델 검증에 실패했습니다. 입력한 날짜와 딜량을 확인해 주세요.');
     if(status!=='OPTIMAL')allOptimal=false;
@@ -134,12 +134,12 @@ export async function solveRaid(state, api, progress = () => {}) {
     model.proto().solutionHint={vars:values.map((_,i)=>i),values:[...values]};
     return true;
   }
-  const solved=await optimize(stages,true,'도달 가능한 라운드 계산 중…',8);
+  const solved=await optimize(stages,true,'도달 가능한 라운드 계산 중…',5);
   const secondary=best.stage===3?sum((byBoss.get(final.id)||[]).map(c=>c.x.times(c.damage))):sum(normal.filter(b=>b.round===best.stage+1).map(b=>effective.get(b.id)));
-  if(solved && await optimize(secondary,true,'남은 공격의 딜량 최적화 중…',10)) {
-    if(await optimize(sum([...overkill.values()]),false,'오버딜을 줄이는 중…',5)) {
+  if(solved && await optimize(secondary,true,'남은 공격의 딜량 최적화 중…',7)) {
+    if(await optimize(sum([...overkill.values()]),false,'오버딜을 줄이는 중…',3)) {
       const starts=candidates.map((c,i)=>{const value=model.newIntVar(0,horizon,`scheduled${i}`);model.addMultiplicationEquality(value,[c.start,c.x]);return value;});
-      await optimize(sum(starts),false,'공격 시간 정리 중…',3);
+      await optimize(sum(starts),false,'공격 시간 정리 중…',2);
     }
   }
   const remaining=new Map(bosses.map(b=>[b.id,b.round===4?'infinite':Math.max(0,b.hp-(actual.get(b.id)||0))])),counts=new Map();
