@@ -230,7 +230,13 @@ function renderPlan(plan,target=$('plan-list')){
     }).join('')}</section>`;
   }).join('');
 }
-function renderSchedule(){const plan=state.plan;if(!plan){$('plan-summary').innerHTML='';renderPlan(null);return}const s=plan.summary;$('plan-summary').innerHTML=[['예상 도달',s.reachedFinal?'최종보스':`Round ${s.reachedRound}`],['공격 사용',`${s.attackCount}회`],['총 오버딜',displayNumber(s.totalOverkill)],['최종보스 딜',displayNumber(s.finalDamage)]].map(x=>`<div class="summary-card"><small>${x[0]}</small><strong>${x[1]}</strong></div>`).join('');renderPlan(plan.attacks)}
+function renderSchedule(){
+  const plan=state.plan;
+  if(!plan){$('plan-summary').innerHTML='';renderPlan(null);return}
+  const s=plan.summary;
+  $('plan-summary').innerHTML=[['예상 도달',s.reachedFinal?'최종보스':`Round ${s.reachedRound}`],['공격 사용',`${s.attackCount}회`],['총 오버딜',displayNumber(s.totalOverkill)],['최종보스 딜',displayNumber(s.finalDamage)]].map(x=>`<div class="summary-card"><small>${x[0]}</small><strong>${x[1]}</strong></div>`).join('');
+  try{renderPlan(plan.attacks)}catch(error){$('plan-list').className='plan-list empty-card';$('plan-list').textContent=`시간표 표시 실패: ${error.message}`;throw error}
+}
 function renderSettings(){const f=$('raid-settings');Object.entries(state.settings).forEach(([k,v])=>{if(f.elements[k])f.elements[k].value=String(v)});$('planner-boss-body').innerHTML=state.bosses.map(b=>`<tr data-boss-id="${b.id}"><td>${b.round===4?'최종':b.round}</td><td><input name="bossName" value="${escapeHTML(b.name)}" required maxlength="80"></td><td><select name="bossElement">${ELEMENTS.map(e=>`<option${e===b.element?' selected':''}>${e}</option>`).join('')}</select></td><td><input name="bossHp" inputmode="numeric" value="${b.hp==='infinite'?'무한':displayNumber(b.hp)}" required></td></tr>`).join('')}
 function renderAll(){renderLive();renderSchedule()}
 async function solveRaid(state, progress = () => {}) {
@@ -326,7 +332,7 @@ async function solveRaid(state, progress = () => {}) {
     const b=c.boss,before=remaining.get(b.id),after=before==='infinite'?'infinite':Math.max(0,before-c.damage),over=before==='infinite'?0:Math.max(0,c.damage-before),start=new Date(origin.getTime()+c.minute*60000);remaining.set(b.id,after);add(counts,c.user.id,1);
     return {start:iso(start),timeLabel:`${pad(start.getMonth()+1)}/${pad(start.getDate())} ${pad(start.getHours())}:${pad(start.getMinutes())}`,isNow:start<=new Date(now.getTime()+duration*60000),userId:c.user.id,userName:c.user.name,partyId:c.party.id,partyName:c.party.name,nikkes:c.party.nikkes,bossId:b.id,bossName:b.name,round:b.round,element:b.element,damage:c.damage,beforeHp:before,afterHp:after,overkill:over,attackNumber:(resultCount.get(c.user.id)||0)+counts.get(c.user.id)};
   });
-  return {status:allOptimal?'OPTIMAL':'FEASIBLE',summary:{reachedFinal:best.stage===3,reachedRound:best.stage+1,attackCount:attacks.length,totalOverkill:attacks.reduce((s,a)=>s+a.overkill,0),finalDamage:attacks.filter(a=>a.round===4).reduce((s,a)=>s+a.damage,0)},attacks};
+  return {status:allOptimal?'OPTIMAL':'FEASIBLE',summary:{reachedFinal:best.stage===3,reachedRound:best.stage+1,attackCount:attacks.length,totalOverkill:attacks.reduce((s,a)=>s+a.overkill,0),finalDamage:attacks.filter(a=>a.round===4).reduce((s,a)=>s+a.damage,0)},attacks,diagnostics:{activeUsers:users.length,candidates:candidates.length,totalAttackLimit:attackLimit}};
 }
 
 
@@ -372,7 +378,14 @@ async function calculate(){
     const plan=await solveRaid(JSON.parse(snapshot),message=>{phase=message;updateStatus();});
     clearInterval(ticker);
     if(snapshot!==JSON.stringify({...state,plan:null}))throw new Error('계산 중 입력이 변경됐습니다. 현재 입력으로 다시 계산해 주세요.');
-    state.plan=plan;localSave(plan.status==='OPTIMAL'?'최적 계획 계산 완료 · 결과를 확인하세요.':'공격 계획 계산 완료 · 제한 시간 내 찾은 최선의 계획입니다.');renderSchedule();renderLive();
+    if(!plan.attacks?.length){
+      const d=plan.diagnostics||{};
+      throw new Error(`배치 가능한 공격이 0개입니다. 활성 유저 ${d.activeUsers??0}명 · 공격 후보 ${d.candidates??0}개 · 남은 공격권 합계 ${d.totalAttackLimit??0}회`);
+    }
+    state.plan=plan;
+    renderSchedule();
+    renderLive();
+    localSave(`공격 계획 계산 완료 · ${plan.attacks.length}개 공격을 시간표에 표시했습니다.`);
   }
   catch(error){$('planner-status').textContent=`계산 실패: ${error.message}`;}
   finally{buttons.forEach(button=>{button.disabled=false;button.classList.remove('is-calculating');button.textContent=button.dataset.label;});}
