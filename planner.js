@@ -562,14 +562,10 @@ async function calculate(){
   }
 }
 document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b===button));document.querySelectorAll('.planner-view').forEach(v=>v.hidden=v.id!==`view-${button.dataset.view}`)}));
-for(const id of ['result-form','lock-form'])$(id).elements.user.addEventListener('change',e=>updatePartySelect(e.target.form));
-state.locks=state.locks.filter(l=>!(l.userId===user.id&&l.partyId===party.id&&l.bossId===boss.id));state.plan=null;await saveShared('실제 결과와 공격권·사용 니케·보스 HP를 저장했습니다. 재계산 버튼을 누르면 새 계획을 만듭니다.');f.elements.damage.value='';renderAll()});
-state.plan=null;await saveShared('공격을 잠갔습니다. 재계산 때 필수 제약으로 반영됩니다.');renderAll()});
-document.addEventListener('click',async e=>{const b=e.target.closest('[data-remove-lock]');if(b){state.locks=state.locks.filter(x=>x.id!==b.dataset.removeLock);state.plan=null;await saveShared('공격 잠금을 해제했습니다.');renderAll()}});
-$('raid-settings').addEventListener('submit',async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));if(new Date(values.startAt)>=new Date(values.endAt))return alert('종료 시각은 시작보다 늦어야 합니다.');const rows=[...$('planner-boss-body').querySelectorAll('tr')];try{state.bosses=rows.map((row,index)=>{const raw=row.querySelector('[name=bossHp]').value.trim();const final=index===rows.length-1;const hp=/^(무한|infinite|∞)$/i.test(raw)?'infinite':Number(raw.replace(/,/g,''));if((!final&&hp==='infinite')||(hp!=='infinite'&&(!Number.isSafeInteger(hp)||hp<=0)))throw new Error('일반 보스 HP는 0보다 큰 정수여야 합니다.');const prior=state.bosses.find(b=>b.id===row.dataset.bossId);return{...prior,name:row.querySelector('[name=bossName]').value.trim(),element:row.querySelector('[name=bossElement]').value,hp}});for(const round of [1,2,3])if(new Set(state.bosses.filter(b=>b.round===round).map(b=>b.element)).size!==5)throw new Error(`Round ${round}에는 5개 속성을 하나씩 선택해야 합니다.`)}catch(error){return alert(error.message)}state.settings={...values,attackMinutes:Number(values.attackMinutes),simultaneous:values.simultaneous==='true',finalElement:state.bosses.at(-1).element};state.plan=null;await saveShared('레이드와 보스 설정을 저장했습니다.');renderAll()});
-$('calculate').addEventListener('click',calculate);$('recalculate').addEventListener('click',calculate);
+$('raid-settings')?.addEventListener('submit',async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));if(new Date(values.startAt)>=new Date(values.endAt))return alert('종료 시각은 시작보다 늦어야 합니다.');const rows=[...$('planner-boss-body').querySelectorAll('tr')];try{state.bosses=rows.map((row,index)=>{const raw=row.querySelector('[name=bossHp]').value.trim();const final=index===rows.length-1;const hp=/^(무한|infinite|∞)$/i.test(raw)?'infinite':Number(raw.replace(/,/g,''));if((!final&&hp==='infinite')||(hp!=='infinite'&&(!Number.isSafeInteger(hp)||hp<=0)))throw new Error('일반 보스 HP는 0보다 큰 정수여야 합니다.');const prior=state.bosses.find(b=>b.id===row.dataset.bossId);return{...prior,name:row.querySelector('[name=bossName]').value.trim(),element:row.querySelector('[name=bossElement]').value,hp}});for(const round of [1,2,3])if(new Set(state.bosses.filter(b=>b.round===round).map(b=>b.element)).size!==5)throw new Error(`Round ${round}에는 5개 속성을 하나씩 선택해야 합니다.`)}catch(error){return alert(error.message)}state.settings={...values,attackMinutes:Number(values.attackMinutes),simultaneous:values.simultaneous==='true',finalElement:state.bosses.at(-1).element};state.plan=null;await saveShared('레이드와 보스 설정을 저장했습니다.');renderAll()});
+$('calculate')?.addEventListener('click',calculate);
 $('reset-plan')?.addEventListener('click',()=>{
-  if(!confirm('입력 데이터, 실제 공격 결과, 공격 잠금, 계산된 시간표를 모두 초기화할까요?'))return;
+  if(!confirm('입력 데이터, 실제 공격 결과, 계산된 공격 계획을 모두 초기화할까요?'))return;
   localStorage.removeItem('union-planner-v2');
   state=parseUnionRaidSeed();
   ensurePlanningSettings();
@@ -577,10 +573,10 @@ $('reset-plan')?.addEventListener('click',()=>{
   renderAll();
   localSave('전체 데이터를 초기화했습니다.');
 });
-$('plan-time-slots')?.addEventListener('change',()=>{renderSchedule();});
 document.addEventListener('click',e=>{const resultCard=e.target.closest('[data-result-id]');if(resultCard){openCompletedAttackDetail(resultCard.dataset.resultId);return}const card=e.target.closest('[data-plan-index]');if(card)openAttackDetail(Number(card.dataset.planIndex));});
 $('attack-detail-close')?.addEventListener('click',()=>$('attack-detail-dialog').close());
 $('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜량은 0 이상의 정수여야 합니다.');try{if(f.dataset.resultId){const result=state.results.find(r=>r.id===f.dataset.resultId);if(!result)throw new Error('완료 공격을 찾을 수 없습니다.');result.damage=damage;result.at=new Date().toISOString();await saveShared('완료된 공격의 실제 딜을 수정했습니다.');renderAll();}else await saveActualFromPlan(Number(f.elements.attackIndex.value),damage);$('attack-detail-dialog').close();}catch(error){alert(error.message);}});
+
 let transferredState = null;
 try { if (window.name.startsWith('union-planner-state:')) { transferredState = validateState(JSON.parse(window.name.slice('union-planner-state:'.length))); window.name = ''; } } catch { window.name = ''; }
 try{state=transferredState||validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed())}catch{state=parseUnionRaidSeed()}ensurePlanningSettings();selectedUser=null;renderAll();
