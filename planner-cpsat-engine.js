@@ -130,12 +130,19 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   // best stage-feasible plan and mark it as unproven instead of pretending that
   // a secondary objective was optimized.
   let targetExpr=null;
+  let targetValue=null;
   if(result.status===CpSolverStatus.OPTIMAL&&remainingSeconds()>0.05){
     model.add(stageExpr.equals(bestStage));
     hintFrom(result);
+    const targetVars=targetRound===4
+      ? candidates.filter(c=>c.boss.round===4)
+      : normal.filter(b=>b.round===targetRound).map(b=>effectiveByBoss.get(b.id));
     targetExpr=targetRound===4
       ? finalExpr
-      : sum(normal.filter(b=>b.round===targetRound).map(b=>effectiveByBoss.get(b.id)));
+      : sum(targetVars);
+    targetValue=current=>Math.round(targetRound===4
+      ? targetVars.reduce((total,c)=>total+c.damage*current.value(c.x),0)
+      : targetVars.reduce((total,v)=>total+current.value(v),0));
     const targetResult=solvePhase(
       targetRound===4?'2/3 최종보스 딜 최적해 증명 중…':`2/3 R${targetRound} 유효 딜 최적해 증명 중…`,
       targetExpr,'max'
@@ -148,7 +155,7 @@ export async function solveRaidCpSat(state, progress = () => {}) {
 
   let planningWaste=null;
   if(optimization.target==='OPTIMAL'&&remainingSeconds()>0.05){
-    const bestTarget=Math.round(result.value(targetExpr));
+    const bestTarget=targetValue(result);
     model.add(targetExpr.equals(bestTarget));
     hintFrom(result);
 
@@ -174,7 +181,7 @@ export async function solveRaidCpSat(state, progress = () => {}) {
       if(wasteResult&&feasible(wasteResult.status)){
         result=wasteResult;
         optimization.waste=statusText(wasteResult.status);
-        planningWaste=Math.round(wasteResult.value(wasteExpr));
+        planningWaste=Math.round(wasteVars.reduce((total,v)=>total+wasteResult.value(v),0));
       }
     }else{
       optimization.waste='OPTIMAL';
