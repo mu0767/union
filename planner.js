@@ -185,9 +185,9 @@ function renderPlan(plan,target=$('plan-list')){
     }).join('')}</section>`;
   }).join('');
 }
-function renderTheory(){const plan=state.plan;if(!plan){$('plan-summary').innerHTML='';renderPlan(null);return}const s=plan.summary;$('plan-summary').innerHTML=[['예상 도달',s.reachedFinal?'최종보스':`Round ${s.reachedRound}`],['공격 사용',`${s.attackCount}회`],['총 오버딜',displayNumber(s.totalOverkill)],['최종보스 딜',displayNumber(s.finalDamage)]].map(x=>`<div class="summary-card"><small>${x[0]}</small><strong>${x[1]}</strong></div>`).join('');renderPlan(plan.attacks)}
+function renderSchedule(){const plan=state.plan;if(!plan){$('plan-summary').innerHTML='';renderPlan(null);return}const s=plan.summary;$('plan-summary').innerHTML=[['예상 도달',s.reachedFinal?'최종보스':`Round ${s.reachedRound}`],['공격 사용',`${s.attackCount}회`],['총 오버딜',displayNumber(s.totalOverkill)],['최종보스 딜',displayNumber(s.finalDamage)]].map(x=>`<div class="summary-card"><small>${x[0]}</small><strong>${x[1]}</strong></div>`).join('');renderPlan(plan.attacks)}
 function renderSettings(){const f=$('raid-settings');Object.entries(state.settings).forEach(([k,v])=>{if(f.elements[k])f.elements[k].value=String(v)});$('planner-boss-body').innerHTML=state.bosses.map(b=>`<tr data-boss-id="${b.id}"><td>${b.round===4?'최종':b.round}</td><td><input name="bossName" value="${escapeHTML(b.name)}" required maxlength="80"></td><td><select name="bossElement">${ELEMENTS.map(e=>`<option${e===b.element?' selected':''}>${e}</option>`).join('')}</select></td><td><input name="bossHp" inputmode="numeric" value="${b.hp==='infinite'?'무한':displayNumber(b.hp)}" required></td></tr>`).join('')}
-function renderAll(){renderMembers();renderLive();renderTheory()}
+function renderAll(){renderMembers();renderLive();renderSchedule()}
 async function solveRaid(state, progress = () => {}) {
   const settings=state.settings || {}, duration=Number(settings.attackMinutes);
   const origin=new Date(settings.startAt), end=new Date(settings.endAt), now=new Date(settings.now);
@@ -327,7 +327,7 @@ async function calculate(){
     const plan=await solveRaid(JSON.parse(snapshot),message=>{phase=message;updateStatus();});
     clearInterval(ticker);
     if(snapshot!==JSON.stringify({...state,plan:null}))throw new Error('계산 중 입력이 변경됐습니다. 현재 입력으로 다시 계산해 주세요.');
-    state.plan=plan;localSave(plan.status==='OPTIMAL'?'최적 계획 계산 완료 · 결과를 확인하세요.':'공격 계획 계산 완료 · 제한 시간 내 찾은 최선의 계획입니다.');renderTheory();renderLive();
+    state.plan=plan;localSave(plan.status==='OPTIMAL'?'최적 계획 계산 완료 · 결과를 확인하세요.':'공격 계획 계산 완료 · 제한 시간 내 찾은 최선의 계획입니다.');renderSchedule();renderLive();
   }
   catch(error){$('planner-status').textContent=`계산 실패: ${error.message}`;}
   finally{buttons.forEach(button=>{button.disabled=false;button.classList.remove('is-calculating');button.textContent=button.dataset.label;});}
@@ -345,7 +345,7 @@ $('lock-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-remove-lock]');if(b){state.locks=state.locks.filter(x=>x.id!==b.dataset.removeLock);state.plan=null;await saveShared('공격 잠금을 해제했습니다.');renderAll()}});
 $('raid-settings').addEventListener('submit',async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));if(new Date(values.startAt)>=new Date(values.endAt))return alert('종료 시각은 시작보다 늦어야 합니다.');const rows=[...$('planner-boss-body').querySelectorAll('tr')];try{state.bosses=rows.map((row,index)=>{const raw=row.querySelector('[name=bossHp]').value.trim();const final=index===rows.length-1;const hp=/^(무한|infinite|∞)$/i.test(raw)?'infinite':Number(raw.replace(/,/g,''));if((!final&&hp==='infinite')||(hp!=='infinite'&&(!Number.isSafeInteger(hp)||hp<=0)))throw new Error('일반 보스 HP는 0보다 큰 정수여야 합니다.');const prior=state.bosses.find(b=>b.id===row.dataset.bossId);return{...prior,name:row.querySelector('[name=bossName]').value.trim(),element:row.querySelector('[name=bossElement]').value,hp}});for(const round of [1,2,3])if(new Set(state.bosses.filter(b=>b.round===round).map(b=>b.element)).size!==5)throw new Error(`Round ${round}에는 5개 속성을 하나씩 선택해야 합니다.`)}catch(error){return alert(error.message)}state.settings={...values,attackMinutes:Number(values.attackMinutes),simultaneous:values.simultaneous==='true',finalElement:state.bosses.at(-1).element};state.plan=null;await saveShared('레이드와 보스 설정을 저장했습니다.');renderAll()});
 $('calculate').addEventListener('click',calculate);$('recalculate').addEventListener('click',calculate);
-$('plan-time-slots')?.addEventListener('change',()=>{renderTheory();});
+$('plan-time-slots')?.addEventListener('change',()=>{renderSchedule();});
 document.addEventListener('click',e=>{const card=e.target.closest('[data-plan-index]');if(card)openAttackDetail(Number(card.dataset.planIndex));});
 $('attack-detail-close')?.addEventListener('click',()=>$('attack-detail-dialog').close());
 $('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜량은 0 이상의 정수여야 합니다.');try{await saveActualFromPlan(Number(f.elements.attackIndex.value),damage);$('attack-detail-dialog').close();}catch(error){alert(error.message);}});
