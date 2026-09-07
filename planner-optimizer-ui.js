@@ -53,7 +53,10 @@
     const wallBudgetMs=30000;
     const deadline=started+wallBudgetMs;
     let phase='30초 실전 최적화 준비 중…';
-    const updateStatus=()=>{$('planner-status').textContent=`[${Math.floor((Date.now()-started)/1000)}초] ${phase}`;};
+    const updateStatus=()=>{
+      const elapsed=Math.min(30,Math.floor((Date.now()-started)/1000));
+      $('planner-status').textContent=`[${elapsed}초] ${phase}`;
+    };
     updateStatus();
     const ticker=setInterval(updateStatus,1000);
     const workers=[];
@@ -66,19 +69,25 @@
       const portfolioCount=globalThis.crossOriginIsolated===true?1:Math.min(4,Math.max(2,Math.floor(hardware/2)));
       let best=null,finished=0,failed=0,resolved=false;
       const plan=await new Promise((resolve,reject)=>{
-        const hardTimeout=setTimeout(()=>{
+        // The browser may throttle timers while WASM workers saturate the CPU.
+        // Use both a timeout and a frequent deadline guard; the displayed budget
+        // and accepted result are always capped at 30 seconds from the click.
+        const expire=()=>{
           if(resolved)return;
           resolved=true;
           workers.forEach(worker=>worker.terminate());
           if(best)resolve(best);
           else reject(new Error('30초 실전 최적화 제한 시간 안에 실행 가능한 해를 찾지 못했습니다.'));
-        },Math.max(1,deadline-Date.now()));
+        };
+        const hardTimeout=setTimeout(expire,Math.max(1,deadline-Date.now()));
+        const deadlineGuard=setInterval(()=>{if(Date.now()>=deadline)expire();},100);
 
         const finishOne=()=>{
           finished++;
           if(finished<portfolioCount||resolved)return;
           resolved=true;
           clearTimeout(hardTimeout);
+          clearInterval(deadlineGuard);
           workers.forEach(worker=>worker.terminate());
           if(best)resolve(best);
           else reject(new Error(`모든 최적화 탐색이 실패했습니다. (${failed}/${portfolioCount})`));
@@ -97,6 +106,7 @@
             if(data.plan?.status==='OPTIMAL'&&!resolved){
               resolved=true;
               clearTimeout(hardTimeout);
+          clearInterval(deadlineGuard);
               workers.forEach(other=>{if(other!==worker)other.terminate();});
               resolve(data.plan);
               return;
@@ -107,8 +117,8 @@
           worker.onerror=()=>{failed++;finishOne();};
           const input=JSON.parse(snapshot);
           input.__solverSeed=index+1;
-          // 60 seconds is a wall-clock budget for the whole calculation, including
-          // WASM/module startup. Never give each worker a fresh 60-second budget.
+          // 30 seconds is the wall-clock budget for the whole calculation, including
+          // WASM/module startup. Never give each worker a fresh per-phase budget.
           input.__solverMaxSeconds=Math.max(1,Math.floor((deadline-Date.now())/1000));
           input.__levelAttackPower=window.LEVEL_ATTACK_POWER||{};
           worker.postMessage(input);
