@@ -6,6 +6,7 @@ const displayNumber = value => Number(value || 0).toLocaleString('ko-KR');
 const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const characters = [...(window.NIKKE_CHARACTERS || [])].sort((a,b) => b.name.length-a.name.length);
+const characterImage = name => characters.find(c=>c.name===name)?.image || '';
 const defaultBosses = [
   [99856279200,99856279200,150841813600,150841813600,99856279200],
   [149784418800,149784418800,226262720400,226262720400,149784418800],
@@ -189,9 +190,11 @@ function renderPlan(plan,target=$('plan-list')){
   const baseDamage={};for(const r of state.results)baseDamage[r.bossId]=(baseDamage[r.bossId]||0)+Number(r.damage||0);
   const attackCard=a=>{
     const idx=state.plan?.attacks?.indexOf(a)??-1;
+    const portraits=a.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
     return `<button class="raid-slot-card" data-plan-index="${idx}">
       <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong><time>${escapeHTML((a.timeLabel||'').split(' ').at(-1)||'')}</time></div>
-      <small>${escapeHTML(a.partyName)} · ${a.attackNumber}타</small>
+      <div class="raid-slot-portraits">${portraits}</div>
+      <small>${a.attackNumber}타</small>
       <b>${displayNumber(a.damage)}</b>
     </button>`;
   };
@@ -294,7 +297,7 @@ async function solveRaid(state, progress = () => {}) {
   // optimality can take minutes in a browser for a 32-member raid.
   progress('빠른 공격 계획 구성 중…');
   const damage=new Map(actual),chars=new Map([...used].map(([u,n])=>[u,new Set(n)])),attackCounts=new Map(),selected=[];
-  let clock=lower;
+  let clock=0;
   const attackLimit=users.reduce((sum,u)=>sum+u.attacksLeft,0);
 
   function maxFutureAttacks(userId, extraUsed, need){
@@ -417,9 +420,8 @@ function openAttackDetail(index){
   const used=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
   $('attack-detail-title').textContent=`${user.name} · R${attack.round===4?'최종':attack.round} ${attack.bossName}`;
   $('attack-detail-body').innerHTML=`
-    <div class="attack-detail-current"><strong>이번 공격</strong><p>${escapeHTML(attack.partyName)} · ${displayNumber(attack.damage)}</p><div class="attack-nikkes">${attack.nikkes.map(n=>`<span>${escapeHTML(n)}</span>`).join('')}</div></div>
-    <div class="attack-detail-used"><strong>이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>
-    <div class="table-scroll"><table class="party-table attack-damage-table"><thead><tr><th>파티</th><th>속성</th><th>니케 5명</th><th>예상 딜</th></tr></thead><tbody>${user.parties.map(p=>`<tr><td>${escapeHTML(p.name)}</td><td>${escapeHTML(p.element)}</td><td>${p.nikkes.map(escapeHTML).join(' / ')}</td><td>${displayNumber(attack.round===4?(p.finalDamage??p.normalDamage):p.normalDamage)}</td></tr>`).join('')}</tbody></table></div>`;
+    <div class="attack-detail-current"><strong>이번 공격</strong><p>${displayNumber(attack.damage)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
+    <div class="attack-detail-used"><strong>이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
   const f=$('attack-actual-form');f.elements.attackIndex.value=String(index);f.elements.damage.value='';
   $('attack-detail-dialog').showModal();
 }
