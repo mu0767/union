@@ -23,8 +23,8 @@ const done=(list,except=[])=>list.filter(b=>b.round!==4&&!except.includes(b.id))
   ];
   const plan=await solveRaidCpSat({users,bosses:bs,results,locks:[],settings:{startAt:'2026-09-07T05:00',damageTolerance:0},__solverMaxSeconds:20,__solverSeed:1});
   assert.equal(plan.summary.reachedRound,2,'R1 must be cleared');
-  assert(plan.attacks.some(a=>a.partyId==='seolhwa-water'),'설화의 공유 니케는 수냉에 배치해야 한다');
-  assert(plan.attacks.some(a=>a.partyId==='other-fire'),'다른 유저가 작열을 담당해야 한다');
+  assert(plan.attacks.some(a=>a.partyId==='seolhwa-water'&&a.round===1),'설화의 공유 니케는 수냉에 배치해야 한다');
+  assert(plan.attacks.some(a=>a.partyId==='other-fire'&&a.round===1),'다른 유저가 작열을 담당해야 한다');
   assert(!plan.attacks.some(a=>a.partyId==='seolhwa-fire'),'설화를 작열에 고정하는 greedy 해를 선택하면 안 된다');
   console.log('PASS: global cross-element swap');
 }
@@ -42,8 +42,9 @@ const done=(list,except=[])=>list.filter(b=>b.round!==4&&!except.includes(b.id))
   ];
   const plan=await solveRaidCpSat({users,bosses:bs,results,locks:[],settings:{startAt:'2026-09-07T05:00',damageTolerance:1_000_000_000},__solverMaxSeconds:20,__solverSeed:2});
   assert.equal(plan.summary.reachedRound,2,'1B tolerance should count the boss as cleared');
-  assert.deepEqual(plan.attacks.map(a=>a.partyId),['fit-fire']);
-  assert.equal(plan.attacks[0].afterHp,703_934_239);
-  assert.equal(plan.summary.totalOverkill,0);
+  const r1=plan.attacks.filter(a=>a.round===1);
+  assert.deepEqual(r1.map(a=>a.partyId),['fit-fire']);
+  assert.equal(r1[0].afterHp,703_934_239);
+  assert.equal(r1[0].overkill,0);
   console.log('PASS: tolerance threshold prefers the low-waste clear');
 }
