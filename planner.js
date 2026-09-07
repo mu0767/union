@@ -219,6 +219,11 @@ function renderPlan(plan,target=$('plan-list')){
         const planned=untilSlot.filter(a=>a.bossId===b.id).reduce((s,a)=>s+a.damage,0);
         return displayNumber(Math.max(0,b.hp-(baseDamage[b.id]||0)-planned));
       });
+      const overkill=bosses.map(b=>{
+        if(b.hp==='infinite')return '0';
+        const planned=untilSlot.filter(a=>a.bossId===b.id).reduce((s,a)=>s+a.damage,0);
+        return displayNumber(Math.max(0,(baseDamage[b.id]||0)+planned-b.hp));
+      });
       const alternatives=bosses.map(b=>{
         const attack=attacks.find(a=>a.bossId===b.id);
         if(!attack)return [];
@@ -228,6 +233,7 @@ function renderPlan(plan,target=$('plan-list')){
         <div class="raid-board-head"><span></span>${bosses.map(b=>`<strong>${escapeHTML(b.name)}<small>${escapeHTML(b.element)}</small></strong>`).join('')}</div>
         ${Array.from({length:rows},(_,row)=>`<div class="raid-board-row"><span class="raid-row-index">${row+1}</span>${bosses.map(b=>`<div class="raid-board-cell">${attacks.filter(a=>a.bossId===b.id)[row] ? attackCard(attacks.filter(a=>a.bossId===b.id)[row]) : ''}</div>`).join('')}</div>`).join('')}
         <div class="raid-board-footer"><span>남은 HP</span>${remaining.map(v=>`<strong>${v}</strong>`).join('')}</div>
+        <div class="raid-board-footer raid-board-overkill"><span>오버딜</span>${overkill.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-alts"><span>대체 후보</span>${alternatives.map(list=>`<div>${list.length?list.map(x=>`<button type="button" class="alt-candidate" title="${escapeHTML(x.party.name)} · ${x.party.nikkes.map(escapeHTML).join(' / ')}"><strong>${escapeHTML(x.user.name)}</strong><small>${displayNumber(x.damage)}</small></button>`).join(''):'<small class="no-alt">없음</small>'}</div>`).join('')}</div>
       </div></div>`;
     }).join('')}</section>`;
