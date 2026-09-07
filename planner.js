@@ -85,7 +85,7 @@ async function saveShared(message='') { localSave(message); }
 function availabilityText(user){return user.availability.map(w=>`${w.start}-${w.end}`).join(', ')}
 function parseAvailability(text){
   if(!text.trim())return [];
-  return text.split(',').map(value=>{const m=value.trim().match(/^([01]\d|2[0-3]):[0-5]\d\s*-\s*([01]\d|2[0-3]):[0-5]\d$/);if(!m)throw new Error(`시간 형식을 확인해 주세요: ${value}`);return{start:m[1],end:m[2]};});
+  return text.split(',').map(value=>{const m=value.trim().match(/^((?:[01]\d|2[0-3]):[0-5]\d)\s*-\s*((?:[01]\d|2[0-3]):[0-5]\d)$/);if(!m)throw new Error(`시간 형식을 확인해 주세요: ${value}`);return{start:m[1],end:m[2]};});
 }
 function renderMembers(){
   $('member-count').textContent=`${state.users.length}명`;
@@ -129,12 +129,24 @@ function renderTheory(){const plan=state.plan;if(!plan){$('plan-summary').innerH
 function renderSettings(){const f=$('raid-settings');Object.entries(state.settings).forEach(([k,v])=>{if(f.elements[k])f.elements[k].value=String(v)});$('planner-boss-body').innerHTML=state.bosses.map(b=>`<tr data-boss-id="${b.id}"><td>${b.round===4?'최종':b.round}</td><td><input name="bossName" value="${escapeHTML(b.name)}" required maxlength="80"></td><td><select name="bossElement">${ELEMENTS.map(e=>`<option${e===b.element?' selected':''}>${e}</option>`).join('')}</select></td><td><input name="bossHp" inputmode="numeric" value="${b.hp==='infinite'?'무한':displayNumber(b.hp)}" required></td></tr>`).join('')}
 function renderAll(){renderMembers();renderLive();renderTheory()}
 async function calculate(){
+  if ($('calculate').disabled) return;
   if(!state.settings.attackMinutes||state.settings.simultaneous==null||state.settings.simultaneous===''){$('planner-status').textContent='계산에 필요한 운영 기본값을 준비하지 못했습니다. 새로고침 후 다시 시도해 주세요.';return}
   const buttons=[$('calculate'),$('recalculate')];
   buttons.forEach(button=>{button.disabled=true;button.classList.add('is-calculating');button.dataset.label=button.textContent;button.textContent='계산 중…';});
   $('planner-status').textContent='남은 레이드 전체를 최적화하는 중…';
-  if(location.protocol==='file:'){window.name=`union-planner-state:${JSON.stringify(state)}`;location.replace('http://127.0.0.1:8787/planner.html?calculate=1');return}
-  try{const response=await fetch('/api/solve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state})});const data=await response.json();if(!response.ok)throw new Error(data.error||'계산 실패');state.plan=data.plan;localSave('최적 계획 계산 완료 · 결과를 확인하세요.');renderTheory();renderLive();}
+  try {
+    const snapshot=JSON.stringify({...state,plan:null});
+    const plan=await new Promise((resolve,reject)=>{
+      const worker=new Worker('planner-solver-worker.js',{type:'module'});
+      const finish=(error,plan)=>{clearTimeout(timeout);worker.terminate();error?reject(error):resolve(plan);};
+      const timeout=setTimeout(()=>finish(new Error('계산 시간이 초과됐습니다. 입력은 유지됩니다. 다시 계산해 주세요.')),75000);
+      worker.onmessage=({data})=>{if(data.progress)$('planner-status').textContent=data.progress;else if(data.error)finish(new Error(data.error));else finish(null,data.plan);};
+      worker.onerror=()=>finish(new Error('계산기를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'));
+      worker.postMessage(JSON.parse(snapshot));
+    });
+    if(snapshot!==JSON.stringify({...state,plan:null}))throw new Error('계산 중 입력이 변경됐습니다. 현재 입력으로 다시 계산해 주세요.');
+    state.plan=plan;localSave(plan.status==='OPTIMAL'?'최적 계획 계산 완료 · 결과를 확인하세요.':'공격 계획 계산 완료 · 제한 시간 내 찾은 최선의 계획입니다.');renderTheory();renderLive();
+  }
   catch(error){$('planner-status').textContent=`계산 실패: ${error.message}`;}
   finally{buttons.forEach(button=>{button.disabled=false;button.classList.remove('is-calculating');button.textContent=button.dataset.label;});}
 }

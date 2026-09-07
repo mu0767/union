@@ -60,14 +60,20 @@ export default {
     const path = new URL(request.url).pathname;
     try {
       if (path === '/api/shared-bosses') return await handleApi(request, env);
-      if (path === '/api/solve') return json({error:'이 배포는 보스 정보 공유용입니다. 기존 Python 최적화 서버는 연결되지 않았습니다.'}, 501);
+      if (path.startsWith('/vendor/')) {
+        const response=await env.ASSETS.fetch(request);
+        const headers=new Headers(response.headers);
+        headers.set('Cross-Origin-Resource-Policy','same-origin');
+        return new Response(response.body,{status:response.status,headers});
+      }
       if (!['GET','HEAD'].includes(request.method)) return new Response('Method not allowed', {status:405});
       const asset = ASSETS[path === '/' ? '/index.html' : path];
       if (!asset) return new Response('Not found', {status:404});
       const bytes = Uint8Array.from(atob(asset.data), c => c.charCodeAt(0));
       return new Response(request.method === 'HEAD' ? null : bytes, {headers:{
         'Content-Type':asset.type, 'Cache-Control':path.includes('/portraits/') ? 'public, max-age=86400' : 'no-cache',
-        'X-Content-Type-Options':'nosniff', 'Referrer-Policy':'same-origin'
+        'X-Content-Type-Options':'nosniff', 'Referrer-Policy':'same-origin',
+        'Cross-Origin-Opener-Policy':'same-origin', 'Cross-Origin-Embedder-Policy':'require-corp'
       }});
     } catch (error) {
       console.error('Shared store error', error);

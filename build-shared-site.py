@@ -3,10 +3,11 @@ from pathlib import Path
 import base64
 import json
 import mimetypes
+import shutil
 
 root = Path(__file__).resolve().parent
 names = ['index.html','styles.css','app.js','data.js','characters.js','boss-repository.js','shared-config.js',
-         'planner.html','planner.css','planner.js']
+         'planner.html','planner.css','planner.js','planner-solver.js','planner-solver-worker.js']
 files = [root / name for name in names] + list((root/'assets').rglob('*'))
 assets = {}
 for path in files:
@@ -23,4 +24,6 @@ output = 'const ASSETS = '+json.dumps(assets)+';\nconst INITIAL_STORE = '+json.d
 (root/'dist/.openai').mkdir(parents=True,exist_ok=True)
 (root/'dist/server/index.js').write_text(output,encoding='utf-8')
 (root/'dist/.openai/hosting.json').write_bytes((root/'.openai/hosting.json').read_bytes())
+# Large WASM assets are served as static files, never embedded in Worker memory.
+shutil.copytree(root/'vendor', root/'dist/client/vendor', dirs_exist_ok=True)
 print(f'Built Worker with {len(assets)} existing assets; {len(output)} bytes')
