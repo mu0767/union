@@ -272,7 +272,9 @@ async function solveRaid(state, progress = () => {}) {
       const parse=v=>{if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(v))throw Error(`${user.name}: 가능 시간 형식을 확인해 주세요.`);return v.split(':').map(Number);};
       const [sh,sm]=parse(w.start),[eh,em]=parse(w.end);
       const a=new Date(day),b=new Date(day);a.setMinutes(a.getMinutes()+((sh-5+24)%24)*60+sm);b.setMinutes(b.getMinutes()+((eh-5+24)%24)*60+em);if(b<=a)b.setDate(b.getDate()+1);
-      const first=Math.max(lower,Math.ceil((a-origin)/60000)),last=Math.min(horizon-duration,Math.floor((b-origin)/60000)-duration);
+      // The timetable is a planning view, so include the whole raid window.
+      // Do not cut off earlier time slots just because the page is opened later.
+      const first=Math.max(0,Math.ceil((a-origin)/60000)),last=Math.min(horizon-duration,Math.floor((b-origin)/60000)-duration);
       if(first<=last)windows.push([first,last]);
     }
     return windows;
