@@ -32,6 +32,20 @@ async function readStore(db) {
   }
   return {...JSON.parse(row.data), version:row.version};
 }
+async function saveField(db, field, value) {
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const current = await readStore(db);
+    const next = JSON.parse(JSON.stringify(current));
+    delete next.version;
+    next[field] = value;
+    const version = current.version + 1;
+    const result = await db.prepare('UPDATE shared_bosses SET version = ?, data = ? WHERE id = 1 AND version = ?')
+      .bind(version, JSON.stringify(next), current.version).run();
+    if (result.meta.changes === 1) return {version, ...next};
+    await new Promise(resolve => setTimeout(resolve, 10 + Math.random() * Math.min(400, 20 * 2 ** attempt)));
+  }
+  throw new Error('다른 저장이 많습니다. 잠시 후 다시 저장해 주세요.');
+}
 async function saveChanges(db, changes) {
   for (let attempt = 0; attempt < 16; attempt++) {
     const current = await readStore(db);
@@ -54,6 +68,14 @@ async function handleApi(request, env) {
       return json({version:row?.version ?? 0});
     }
     if (url.searchParams.get('action') === 'load') return json(await readStore(env.DB));
+    if (url.searchParams.get('action') === 'planner') {
+      const store = await readStore(env.DB);
+      return json({version:store.version, plannerState:store.plannerState ?? null});
+    }
+    if (url.searchParams.get('action') === 'multipliers') {
+      const store = await readStore(env.DB);
+      return json({version:store.version, damageMultipliers:store.damageMultipliers ?? [1,1,1,1,1]});
+    }
     return json({error:'지원하지 않는 요청'}, 400);
   }
   if (request.method !== 'POST') return json({error:'지원하지 않는 요청'}, 405);
@@ -66,14 +88,26 @@ async function handleApi(request, env) {
     const {value, done} = await reader.read();
     if (done) break;
     length += value.length;
-    if (length > 16000) { await reader.cancel(); return json({error:'요청 크기 초과'}, 413); }
+    if (length > 1000000) { await reader.cancel(); return json({error:'요청 크기 초과'}, 413); }
     chunks.push(value);
   }
   let body;
   try { body = JSON.parse(await new Blob(chunks).text()); }
   catch { return json({error:'요청 형식 오류'}, 400); }
-  if (body?.action !== 'save') return json({error:'지원하지 않는 요청'}, 400);
-  try { return json(await saveChanges(env.DB, body.changes)); }
+  try {
+    if (body?.action === 'save') return json(await saveChanges(env.DB, body.changes));
+    if (body?.action === 'save-planner') {
+      const s=body.plannerState;
+      if(!s||!Array.isArray(s.users)||s.users.length>32||!Array.isArray(s.bosses)||!Array.isArray(s.results)) throw new Error('플래너 상태 형식 오류');
+      return json(await saveField(env.DB,'plannerState',s));
+    }
+    if (body?.action === 'save-multipliers') {
+      const m=body.damageMultipliers;
+      if(!Array.isArray(m)||m.length!==5||!m.every(v=>Number.isFinite(v)&&v>=0&&v<=100)) throw new Error('딜량 배율 형식 오류');
+      return json(await saveField(env.DB,'damageMultipliers',m));
+    }
+    return json({error:'지원하지 않는 요청'}, 400);
+  }
   catch (error) { return json({error:error.message}, 409); }
 }
 export default {
