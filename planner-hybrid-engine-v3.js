@@ -2,11 +2,11 @@ import { solveRaidHybrid as solveBase } from './planner-hybrid-engine-v2.js';
 
 const add=(m,k,v)=>m.set(k,(m.get(k)||0)+v);
 
-export async function solveRaidHybrid(state,progress=()=>{}){
+export async function solveRaidHybrid(state,progress=()=>{},emitPlan=()=>{}){
   // Reserve a few seconds from the 30s wall budget for deterministic cleanup.
   const total=Math.max(1,Math.min(30,Number(state.__solverMaxSeconds||30)));
   const baseBudget=Math.max(1,total-3);
-  const base=await solveBase({...state,__solverMaxSeconds:baseBudget},progress);
+  const base=await solveBase({...state,__solverMaxSeconds:baseBudget},progress,emitPlan);
   progress('최종 sanity 개선 · 1:0 / 1:1 / 2:1 교환 검사 중…');
 
   const tolerance=state.settings?.damageTolerance??1_000_000_000;
