@@ -131,10 +131,52 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   result=optimize('3/4 유효 딜·최종보스 딜 최대화 중…',8,productiveExpr,'max',result);
   const bestProductive=Math.round(effectiveVars.reduce((s,v)=>s+result.value(v),0)+candidates.filter(c=>c.boss.round===4).reduce((s,c)=>s+c.damage*result.value(c.x),0));
   model.add(productiveExpr.ge(bestProductive));hintFrom(result);
-  result=optimize('4/4 불필요한 공격 최소화 중…',5,attackExpr,'min',result);
+  // Reserve compatible parties for spare tickets while choosing the core.
+  // Otherwise a core party can consume characters needed by two spare parties.
+  const reserves=[];
+  for(const user of users){
+    const own=candidates.filter(c=>c.user.id===user.id);
+    const available=own.filter(c=>c.boss.round===bestStage+1);
+    for(const party of user.parties||[]){
+      const candidate=available.find(c=>c.party.id===party.id);
+      if(candidate)reserves.push({...candidate,x:model.newBoolVar('reserve_'+reserves.length)});
+    }
+    const combined=[...own,...reserves.filter(c=>c.user.id===user.id)];
+    model.add(sum(combined.map(c=>c.x)).le(user.attacksLeft));
+    for(const name of new Set(combined.flatMap(c=>c.party.nikkes)))model.add(sum(combined.filter(c=>c.party.nikkes.includes(name)).map(c=>c.x)).le(1));
+  }
+  result=optimize('4/4 남은 공격권 편성 확보 중…',5,attackExpr.plus(sum(reserves.map(c=>c.x))),'max',result);
 
   progress('최선 계획 정리 중…');
   const chosen=candidates.filter(c=>result.value(c.x)>0.5);
+  // Preserve the low-overkill core, then spend spare tickets on the remaining
+  // round. Spare attacks must not be forced into already cleared bosses.
+  const plannedDamage=new Map(actual),plannedCounts=new Map();
+  const plannedUsed=new Map([...used].map(([id,names])=>[id,new Set(names)]));
+  const record=c=>{
+    add(plannedDamage,c.boss.id,c.damage);add(plannedCounts,c.user.id,1);
+    if(!plannedUsed.has(c.user.id))plannedUsed.set(c.user.id,new Set());
+    c.party.nikkes.forEach(n=>plannedUsed.get(c.user.id).add(n));
+  };
+  chosen.forEach(record);
+  const cleared=b=>(plannedDamage.get(b.id)||0)>=Math.max(1,b.hp-tolerance);
+  let extraAttacks=0;
+  while(true){
+    const round=[1,2,3].find(r=>normal.some(b=>b.round===r&&!cleared(b)))||4;
+    let pick=null;
+    const reserved=reserves.filter(c=>result.value(c.x)>0.5);
+    const preferred=reserved.filter(c=>c.boss.round===round&&(round===4||!cleared(c.boss))&&(plannedCounts.get(c.user.id)||0)<c.user.attacksLeft&&!c.party.nikkes.some(n=>plannedUsed.get(c.user.id)?.has(n)));
+    for(const c of preferred.length?preferred:candidates){
+      if(c.boss.round!==round||(round!==4&&cleared(c.boss)))continue;
+      if((plannedCounts.get(c.user.id)||0)>=c.user.attacksLeft||c.party.nikkes.some(n=>plannedUsed.get(c.user.id)?.has(n)))continue;
+      const hp=round===4?Infinity:Math.max(0,c.boss.hp-(plannedDamage.get(c.boss.id)||0));
+      const useful=Math.min(hp,c.damage),over=Math.max(0,c.damage-hp);
+      if(!pick||useful>pick.useful||useful===pick.useful&&over<pick.over)pick={...c,useful,over};
+    }
+    if(!pick)break;
+    chosen.push(pick);record(pick);extraAttacks++;
+  }
+  const reachedStage=[1,2,3].filter(r=>normal.filter(b=>b.round===r).every(cleared)).length;
   const bossOrder=new Map(bosses.map((b,i)=>[b.id,i]));
   chosen.sort((a,b)=>a.boss.round-b.boss.round||(bossOrder.get(a.boss.id)-bossOrder.get(b.boss.id))||a.user.name.localeCompare(b.user.name));
 
@@ -161,13 +203,14 @@ export async function solveRaidCpSat(state, progress = () => {}) {
 
   const finalDamage=chosen.filter(c=>c.boss.round===4).reduce((s,c)=>s+c.damage,0);
   return {
-    status:allOptimal?'OPTIMAL':'FEASIBLE',
+    status:allOptimal&&!extraAttacks?'OPTIMAL':'FEASIBLE',
     summary:{
-      reachedFinal:bestStage===3,
-      reachedRound:bestStage+1,
+      reachedFinal:reachedStage===3,
+      reachedRound:reachedStage+1,
       attackCount:attacks.length,
       totalOverkill:attacks.reduce((s,a)=>s+a.overkill,0),
       damageTolerance:tolerance,
+      unusedAttacks:users.reduce((s,u)=>s+u.attacksLeft,0)-attacks.length,
       finalDamage
     },
     attacks,

@@ -29,6 +29,14 @@ try {
   assert(!status.includes('실패'), status);
   const plan = await page.evaluate(() => state.plan);
   assert(plan?.attacks.length > 0, status);
+  const seed=await page.evaluate(()=>state);
+  assert.equal(plan.summary.attackCount,seed.users.filter(u=>u.active).reduce((s,u)=>s+u.attacksLeft,0),'default raid should spend all tickets');
+  for(const user of seed.users){
+    const attacks=plan.attacks.filter(a=>a.userId===user.id);
+    assert(attacks.length<=user.attacksLeft);
+    const names=attacks.flatMap(a=>a.nikkes);
+    assert.equal(new Set(names).size,names.length,'spare attacks must not reuse characters');
+  }
   assert(await page.locator('#plan-list [data-plan-index]').count() > 0);
   assert(await page.locator('#plan-list .damage-efficiency').count() > 0);
   await page.locator('#plan-list [data-plan-index]').first().click();
@@ -44,6 +52,7 @@ try {
   assert(percentage.includes('(98%)'),'attack-power-normalized percentage');
   console.log('R2 electric:',plan.attacks.filter(a=>a.round===2&&a.element==='전격').map(a=>({user:a.userName,damage:a.damage,overkill:a.overkill})));
   console.log('PASS: calculate button and rendered attacks', plan.summary);
+  console.log('Unused',await page.evaluate(()=>state.users.filter(u=>u.active).map(u=>{const a=state.plan.attacks.filter(a=>a.userId===u.id); const used=new Set(a.flatMap(a=>a.nikkes));return {name:u.name,left:u.attacksLeft-a.length,parties:u.parties.filter(p=>p.normalDamage>0&&!p.nikkes.some(n=>used.has(n))).map(p=>({element:p.element,damage:p.normalDamage}))};}).filter(u=>u.left)));
   const result = await page.evaluate(async () => {
     const { solveRaidCpSat } = await import('./planner-cpsat-engine.js');
     const elements = ['철갑', '수냉', '작열', '풍압', '전격'];
