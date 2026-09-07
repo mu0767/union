@@ -32,9 +32,24 @@ jobs:
           npm install
           npm run build:cpsat
       - name: Verify raid optimizer objectives
+        id: optimizer_tests
+        continue-on-error: true
+        shell: bash
         run: |
-          node verify-planner-objectives.mjs
-          node verify-planner-global-optimization.mjs
+          set -o pipefail
+          {
+            node verify-planner-objectives.mjs
+            node verify-planner-global-optimization.mjs
+          } 2>&1 | tee optimizer-test.log
+      - name: Upload optimizer test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: optimizer-test-log
+          path: optimizer-test.log
+      - name: Stop deployment when optimizer tests fail
+        if: steps.optimizer_tests.outcome == 'failure'
+        run: exit 1
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
       - name: Build Blablalink character catalog
