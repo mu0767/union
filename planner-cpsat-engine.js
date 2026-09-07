@@ -1,4 +1,4 @@
-import { CpModel, CpSolver, CpSolverStatus } from './vendor/cpsat/index.js';
+import { CpModel, CpSolver, CpSolverStatus, LinearExpr } from './vendor/cpsat/index.js';
 
 const feasible = status => status === CpSolverStatus.OPTIMAL || status === CpSolverStatus.FEASIBLE;
 
@@ -11,6 +11,8 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   const bosses=state.bosses||[];
   const normal=bosses.filter(b=>[1,2,3].includes(b.round));
   const final=bosses.find(b=>b.round===4);
+  const tolerance=state.settings?.damageTolerance??1_000_000_000;
+  if(!Number.isSafeInteger(tolerance)||tolerance<0)throw new Error('허용 딜 오차는 0 이상의 정수여야 합니다.');
   if(normal.length!==15||!final)throw new Error('보스 정보가 올바르지 않습니다.');
 
   const actual=new Map(), used=new Map(), resultCount=new Map();
@@ -23,9 +25,10 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   }
 
   const model=new CpModel('union-raid');
-  const zero=model.newConstant(0);
-  const asExpr=value=>value?.toLinearExpr?value.toLinearExpr():value;
-  const sum=items=>items.reduce((acc,item)=>acc.plus(asExpr(item)),zero.times(0));
+  // LinearExpr.plus accepts expressions or constants, not raw IntVar/BoolVar.
+  const sum=items=>items.reduce((acc,item)=>acc.plus(
+    item instanceof LinearExpr ? item : item.toLinearExpr()
+  ),LinearExpr.fromConstant(0));
   const candidates=[];
 
   for(const user of users){
@@ -61,17 +64,21 @@ export async function solveRaidCpSat(state, progress = () => {}) {
 
   const bossDamageExpr=new Map();
   const overVars=[];
+  const effectiveVars=[];
   for(const boss of normal){
     const vars=candidates.filter(c=>c.boss.id===boss.id);
     const expr=sum(vars.map(c=>c.x.times(c.damage)));
     bossDamageExpr.set(boss.id,expr);
     const idx=boss.round-1;
     const remaining=Math.max(0,boss.hp-(actual.get(boss.id)||0));
-    model.add(expr.ge(clear[idx].times(remaining)));
+    model.add(expr.ge(clear[idx].times(remaining===0?0:Math.max(1,remaining-tolerance))));
     const maxPossible=(actual.get(boss.id)||0)+vars.reduce((s,c)=>s+c.damage,0);
     const over=model.newIntVar(0,Math.max(0,maxPossible-boss.hp),'over_'+boss.id);
-    model.add(over.ge(expr.plus((actual.get(boss.id)||0)-boss.hp)));
+    model.add(over.ge(expr.minus(remaining+tolerance)));
     overVars.push(over);
+    const effective=model.newIntVar(0,remaining,'effective_'+boss.id);
+    model.add(effective.le(expr));
+    effectiveVars.push(effective);
   }
 
   for(const c of candidates){
@@ -105,23 +112,26 @@ export async function solveRaidCpSat(state, progress = () => {}) {
     for(const v of clear)model.addHint(v,result.value(v));
   };
 
-  let result=solvePhase('1/4 도달 라운드 최적화 중…',5,stageExpr,'max');
-  if(!feasible(result.status))throw new Error('CP-SAT이 실행 가능한 공격 계획을 찾지 못했습니다.');
+  let allOptimal=true;
+  const optimize=(label,seconds,objective,mode,previous)=>{
+    const next=solvePhase(label,seconds,objective,mode);
+    allOptimal=allOptimal&&next.status===CpSolverStatus.OPTIMAL;
+    return feasible(next.status)?next:previous;
+  };
+  let result=optimize('1/4 도달 라운드 최적화 중…',5,stageExpr,'max');
+  if(!result)throw new Error('CP-SAT이 실행 가능한 공격 계획을 찾지 못했습니다.');
   const bestStage=Math.round(result.value(clear[0])+result.value(clear[1])+result.value(clear[2]));
   model.add(stageExpr.equals(bestStage));hintFrom(result);
 
-  result=solvePhase('2/4 공격권 사용 최적화 중…',5,attackExpr,'max');
-  if(!feasible(result.status))throw new Error('공격권 최적화 중 실행 가능한 계획을 잃었습니다.');
-  const bestCount=Math.round(candidates.reduce((s,c)=>s+result.value(c.x),0));
-  model.add(attackExpr.equals(bestCount));hintFrom(result);
-
-  result=solvePhase('3/4 오버딜 최소화 중…',15,overExpr,'min');
-  if(!feasible(result.status))throw new Error('오버딜 최적화 중 실행 가능한 계획을 찾지 못했습니다.');
+  result=optimize('2/4 허용 오차 밖 오버딜 최소화 중…',15,overExpr,'min',result);
   const bestOver=Math.round(overVars.reduce((s,v)=>s+result.value(v),0));
-  model.add(overExpr.equals(bestOver));hintFrom(result);
+  model.add(overExpr.le(bestOver));hintFrom(result);
 
-  result=solvePhase('4/4 최종보스 딜 최적화 중…',5,finalExpr,'max');
-  if(!feasible(result.status))throw new Error('최종보스 최적화 중 실행 가능한 계획을 찾지 못했습니다.');
+  const productiveExpr=sum(effectiveVars).plus(finalExpr);
+  result=optimize('3/4 유효 딜·최종보스 딜 최대화 중…',8,productiveExpr,'max',result);
+  const bestProductive=Math.round(effectiveVars.reduce((s,v)=>s+result.value(v),0)+candidates.filter(c=>c.boss.round===4).reduce((s,c)=>s+c.damage*result.value(c.x),0));
+  model.add(productiveExpr.ge(bestProductive));hintFrom(result);
+  result=optimize('4/4 불필요한 공격 최소화 중…',5,attackExpr,'min',result);
 
   progress('최선 계획 정리 중…');
   const chosen=candidates.filter(c=>result.value(c.x)>0.5);
@@ -151,12 +161,13 @@ export async function solveRaidCpSat(state, progress = () => {}) {
 
   const finalDamage=chosen.filter(c=>c.boss.round===4).reduce((s,c)=>s+c.damage,0);
   return {
-    status:result.status===CpSolverStatus.OPTIMAL?'OPTIMAL':'FEASIBLE',
+    status:allOptimal?'OPTIMAL':'FEASIBLE',
     summary:{
       reachedFinal:bestStage===3,
       reachedRound:bestStage+1,
       attackCount:attacks.length,
-      totalOverkill:bestOver,
+      totalOverkill:attacks.reduce((s,a)=>s+a.overkill,0),
+      damageTolerance:tolerance,
       finalDamage
     },
     attacks,

@@ -7,7 +7,8 @@ import shutil
 
 root = Path(__file__).resolve().parent
 names = ['index.html','styles.css','app.js','data.js','characters.js','boss-repository.js','shared-config.js',
-         'planner.html','planner.css','planner.js','planner-solver.js','planner-solver-worker.js']
+         'planner.html','planner.css','planner.js','planner-solver.js','planner-solver-worker.js',
+         'planner-cpsat-engine.js','planner-cpsat-worker.js']
 files = [root / name for name in names] + list((root/'assets').rglob('*'))
 assets = {}
 for path in files:

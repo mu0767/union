@@ -1,4 +1,7 @@
 .browser-check/
+node_modules/
+/vendor/cpsat/
+/vendor/build/
 .sites-plugin/
 .sites-tools/
 .sites-*

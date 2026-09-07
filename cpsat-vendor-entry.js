@@ -1,1 +1,1 @@
-export { CpModel, CpSolver, CpSolverStatus } from 'cpsat-js/portable';
+export { CpModel, CpSolver, CpSolverStatus, LinearExpr } from 'cpsat-js/portable';

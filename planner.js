@@ -174,6 +174,22 @@ function alternativeCandidates(attack,slot){
   return candidates.sort((a,b)=>b.damage-a.damage).slice(0,8);
 }
 
+function formatPlannerDamage(userId,element,damage,round=1){
+  const power=level=>{
+    const table=window.LEVEL_ATTACK_POWER||{};
+    const key=Object.keys(table).map(Number).filter(k=>k<=Number(level)).sort((a,b)=>b-a)[0];
+    return key==null?null:Number(table[key]);
+  };
+  const user=state.users.find(u=>u.id===userId),attackPower=power(user?.level);
+  const values=state.users.flatMap(u=>{
+    const atk=power(u.level);if(!atk)return [];
+    return u.parties.filter(p=>p.element===element).map(p=>(round===4?(p.finalDamage??p.normalDamage):p.normalDamage)/atk).filter(v=>Number.isFinite(v)&&v>0);
+  }).sort((a,b)=>a-b);
+  const middle=Math.floor(values.length/2);
+  const median=values.length?(values.length%2?values[middle]:(values[middle-1]+values[middle])/2):null;
+  const percent=attackPower&&median?Math.round(damage/attackPower/median*100):null;
+  return `${displayNumber(damage)}${percent==null?'':` <span class="damage-efficiency" title="레벨별 공격력으로 보정한 딜 · 같은 속성 중앙값 100%">(${percent}%)</span>`}`;
+}
 function renderPlan(plan,target=$('plan-list')){
   if(!plan?.length){target.className='plan-list empty-card';target.innerHTML='표시할 추천 공격이 없습니다.';return}
   target.className='plan-list';
@@ -181,7 +197,7 @@ function renderPlan(plan,target=$('plan-list')){
   if(target!==$('plan-list')){
     target.innerHTML=plan.map(a=>{
       const idx=state.plan?.attacks?.indexOf(a)??-1;
-      return `<button class="plan-card plan-card-button" data-plan-index="${idx}"><div><small>R${a.round===4?'최종':a.round} · ${escapeHTML(a.element)} · ${a.attackNumber}타</small><p>${escapeHTML(a.userName)} → ${escapeHTML(a.bossName)}</p></div><div><strong>${displayNumber(a.damage)}</strong></div></button>`;
+      return `<button class="plan-card plan-card-button" data-plan-index="${idx}"><div><small>R${a.round===4?'최종':a.round} · ${escapeHTML(a.element)} · ${a.attackNumber}타</small><p>${escapeHTML(a.userName)} → ${escapeHTML(a.bossName)}</p></div><div><strong>${formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</strong></div></button>`;
     }).join('');
     return;
   }
@@ -195,7 +211,7 @@ function renderPlan(plan,target=$('plan-list')){
       <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong></div>
       <div class="raid-slot-portraits">${portraits}</div>
       <small>${a.attackNumber}타</small>
-      <b>${displayNumber(a.damage)}</b>
+      <b>${formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</b>
     </button>`;
   };
 
@@ -237,7 +253,7 @@ function renderPlan(plan,target=$('plan-list')){
         ${Array.from({length:rows},(_,row)=>`<div class="raid-board-row"><span class="raid-row-index">${row+1}</span>${bosses.map(b=>`<div class="raid-board-cell">${attacks.filter(a=>a.bossId===b.id)[row] ? attackCard(attacks.filter(a=>a.bossId===b.id)[row]) : ''}</div>`).join('')}</div>`).join('')}
         <div class="raid-board-footer"><span>남은 HP</span>${remaining.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-footer raid-board-overkill"><span>오버딜</span>${overkill.map(v=>`<strong>${v}</strong>`).join('')}</div>
-        <div class="raid-board-alts"><span>대체 후보</span>${alternatives.map(list=>`<div>${list.length?list.map(x=>`<button type="button" class="alt-candidate" title="${escapeHTML(x.party.name)} · ${x.party.nikkes.map(escapeHTML).join(' / ')}"><strong>${escapeHTML(x.user.name)}</strong><small>${displayNumber(x.damage)}</small></button>`).join(''):'<small class="no-alt">없음</small>'}</div>`).join('')}</div>
+        <div class="raid-board-alts"><span>대체 후보</span>${alternatives.map(list=>`<div>${list.length?list.map(x=>`<button type="button" class="alt-candidate" title="${escapeHTML(x.party.name)} · ${x.party.nikkes.map(escapeHTML).join(' / ')}"><strong>${escapeHTML(x.user.name)}</strong><small>${formatPlannerDamage(x.user.id,x.party.element,x.damage,round)}</small></button>`).join(''):'<small class="no-alt">없음</small>'}</div>`).join('')}</div>
       </div></div>`;
     }).join('')}</section>`;
   }).join('');
@@ -246,7 +262,7 @@ function renderSchedule(){
   const plan=state.plan;
   if(!plan){$('plan-summary').innerHTML='';renderPlan(null);return}
   const s=plan.summary;
-  $('plan-summary').innerHTML=[['예상 도달',s.reachedFinal?'최종보스':`Round ${s.reachedRound}`],['공격 사용',`${s.attackCount}회`],['총 오버딜',displayNumber(s.totalOverkill)],['최종보스 딜',displayNumber(s.finalDamage)]].map(x=>`<div class="summary-card"><small>${x[0]}</small><strong>${x[1]}</strong></div>`).join('');
+  $('plan-summary').innerHTML=[['예상 도달',s.reachedFinal?'최종보스':`Round ${s.reachedRound}`],['공격 사용',`${s.attackCount}회`],['총 오버딜',displayNumber(s.totalOverkill)],['보스별 허용 오차',`±${displayNumber(s.damageTolerance??0)}`],['최종보스 딜',displayNumber(s.finalDamage)]].map(x=>`<div class="summary-card"><small>${x[0]}</small><strong>${x[1]}</strong></div>`).join('');
   try{renderPlan(plan.attacks)}catch(error){$('plan-list').className='plan-list empty-card';$('plan-list').textContent=`시간표 표시 실패: ${error.message}`;throw error}
 }
 function renderSettings(){const f=$('raid-settings');Object.entries(state.settings).forEach(([k,v])=>{if(f.elements[k])f.elements[k].value=String(v)});$('planner-boss-body').innerHTML=state.bosses.map(b=>`<tr data-boss-id="${b.id}"><td>${b.round===4?'최종':b.round}</td><td><input name="bossName" value="${escapeHTML(b.name)}" required maxlength="80"></td><td><select name="bossElement">${ELEMENTS.map(e=>`<option${e===b.element?' selected':''}>${e}</option>`).join('')}</select></td><td><input name="bossHp" inputmode="numeric" value="${b.hp==='infinite'?'무한':displayNumber(b.hp)}" required></td></tr>`).join('')}
@@ -458,7 +474,7 @@ function openAttackDetail(index){
   const used=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
   $('attack-detail-title').textContent=`${user.name} · R${attack.round===4?'최종':attack.round} ${attack.bossName}`;
   $('attack-detail-body').innerHTML=`
-    <div class="attack-detail-current"><strong>이번 공격</strong><p>${displayNumber(attack.damage)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
+    <div class="attack-detail-current"><strong>이번 공격</strong><p>${formatPlannerDamage(attack.userId,attack.element,attack.damage,attack.round)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
     <div class="attack-detail-used"><strong>이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
   const f=$('attack-actual-form');f.elements.attackIndex.value=String(index);f.elements.damage.value='';
   $('attack-detail-dialog').showModal();
