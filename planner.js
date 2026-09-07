@@ -485,17 +485,32 @@ function openAttackDetail(index){
   f.querySelector('button').textContent=result?'실제 딜 수정':'실제 결과 저장';
   $('attack-detail-dialog').showModal();
 }
+function partyDamageForBoss(party,boss){return boss?.round===4?(party.finalDamage??party.normalDamage):party.normalDamage}
+function completedOtherUsedNikkes(userId,resultId){
+  return new Set(state.results.filter(r=>r.userId===userId&&r.id!==resultId).flatMap(r=>r.nikkes||[]));
+}
+function partyChoiceHTML(user,boss,currentPartyId,resultId=''){
+  const used=completedOtherUsedNikkes(user.id,resultId);
+  return (user.parties||[]).filter(p=>p.element===boss.element).map(p=>{
+    const overlap=p.nikkes.filter(n=>used.has(n));
+    const blocked=overlap.length>0;
+    const damage=partyDamageForBoss(p,boss)||0;
+    const portraits=p.nikkes.map(n=>{const src=characterImage(n),usedNikke=used.has(n);return src?`<figure class="${usedNikke?'used-nikke':''}"><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span class="${usedNikke?'used-nikke':''}">${escapeHTML(n)}</span>`;}).join('');
+    return `<button type="button" class="party-choice${blocked?' blocked':''}${p.id===currentPartyId?' selected':''}" data-party-choice="${escapeHTML(p.id)}" ${blocked?'disabled':''} title="${blocked?`사용 완료 니케 중복: ${overlap.map(escapeHTML).join(' / ')}`:'이 조합으로 변경'}"><div><strong>${escapeHTML(p.name)}</strong><small>${displayNumber(damage)}</small></div><div class="party-choice-portraits">${portraits}</div>${blocked?`<em>사용 불가 · ${overlap.map(escapeHTML).join(' / ')}</em>`:''}</button>`;
+  }).join('');
+}
 function openCompletedAttackDetail(resultId){
   const result=state.results.find(r=>r.id===resultId);if(!result)return;
   const attack=completedPlanAttacks().find(a=>a.resultId===resultId);if(!attack)return;
-  const user=state.users.find(u=>u.id===attack.userId);
-  const used=new Set(state.results.filter(r=>r.userId===attack.userId).flatMap(r=>r.nikkes||[]));
+  const user=state.users.find(u=>u.id===attack.userId),boss=state.bosses.find(b=>b.id===attack.bossId);if(!user||!boss)return;
+  const used=completedOtherUsedNikkes(attack.userId,resultId);
   $('attack-detail-title').textContent=`${attack.userName} · R${attack.round===4?'최종':attack.round} ${attack.bossName}`;
   $('attack-detail-body').innerHTML=`
-    <div class="attack-detail-current"><strong>완료된 공격</strong><p>예상 ${displayNumber(attack.damage)} · 실제 ${displayNumber(result.damage)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
-    <div class="attack-detail-used"><strong>이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
-  const f=$('attack-actual-form');f.dataset.resultId=resultId;f.elements.attackIndex.value='';f.elements.damage.value=displayNumber(result.damage);
-  f.querySelector('button').textContent='실제 딜 수정';
+    <div class="attack-detail-current"><strong>완료된 공격</strong><p>예상 ${displayNumber(result.plannedDamage??attack.damage)} · 실제 ${displayNumber(result.damage)} · ${attack.attackNumber}타</p></div>
+    <div class="attack-party-choices"><strong>같은 속성 다른 조합</strong><p class="help">다른 완료 공격에서 이미 사용한 니케가 겹치면 선택할 수 없습니다.</p>${partyChoiceHTML(user,boss,result.partyId,resultId)}</div>
+    <div class="attack-detail-used"><strong>이전 완료 공격에서 이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
+  const f=$('attack-actual-form');f.dataset.resultId=resultId;f.dataset.partyId=result.partyId;f.elements.attackIndex.value='';f.elements.damage.value=displayNumber(result.damage);
+  f.querySelector('button').textContent='변경 저장 후 재계산';
   $('attack-detail-dialog').showModal();
 }
 async function saveActualFromPlan(index,damage){
@@ -573,9 +588,36 @@ $('reset-plan')?.addEventListener('click',()=>{
   renderAll();
   localSave('전체 데이터를 초기화했습니다.');
 });
-document.addEventListener('click',e=>{const resultCard=e.target.closest('[data-result-id]');if(resultCard){openCompletedAttackDetail(resultCard.dataset.resultId);return}const card=e.target.closest('[data-plan-index]');if(card)openAttackDetail(Number(card.dataset.planIndex));});
+document.addEventListener('click',e=>{
+  const choice=e.target.closest('[data-party-choice]');
+  if(choice&&!choice.disabled){
+    const f=$('attack-actual-form'),resultId=f.dataset.resultId;
+    const result=state.results.find(r=>r.id===resultId),user=state.users.find(u=>u.id===result?.userId),boss=state.bosses.find(b=>b.id===result?.bossId),party=user?.parties.find(p=>p.id===choice.dataset.partyChoice);
+    if(result&&party&&boss&&party.element===boss.element){
+      f.dataset.partyId=party.id;
+      f.elements.damage.value=displayNumber(partyDamageForBoss(party,boss)||0);
+      $('attack-detail-body').querySelectorAll('[data-party-choice]').forEach(b=>b.classList.toggle('selected',b.dataset.partyChoice===party.id));
+    }
+    return;
+  }
+  const resultCard=e.target.closest('[data-result-id]');if(resultCard){openCompletedAttackDetail(resultCard.dataset.resultId);return}
+  const card=e.target.closest('[data-plan-index]');if(card)openAttackDetail(Number(card.dataset.planIndex));
+});
 $('attack-detail-close')?.addEventListener('click',()=>$('attack-detail-dialog').close());
-$('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜량은 0 이상의 정수여야 합니다.');try{if(f.dataset.resultId){const result=state.results.find(r=>r.id===f.dataset.resultId);if(!result)throw new Error('완료 공격을 찾을 수 없습니다.');result.damage=damage;result.at=new Date().toISOString();await saveShared('완료된 공격의 실제 딜을 수정했습니다.');renderAll();}else await saveActualFromPlan(Number(f.elements.attackIndex.value),damage);$('attack-detail-dialog').close();}catch(error){alert(error.message);}});
+$('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜량은 0 이상의 정수여야 합니다.');try{
+  if(f.dataset.resultId){
+    const result=state.results.find(r=>r.id===f.dataset.resultId);if(!result)throw new Error('완료 공격을 찾을 수 없습니다.');
+    const user=state.users.find(u=>u.id===result.userId),boss=state.bosses.find(b=>b.id===result.bossId),party=user?.parties.find(p=>p.id===f.dataset.partyId);
+    if(!user||!boss||!party||party.element!==boss.element)throw new Error('선택한 조합이 현재 보스 속성과 맞지 않습니다.');
+    const used=completedOtherUsedNikkes(user.id,result.id),overlap=party.nikkes.filter(n=>used.has(n));if(overlap.length)throw new Error(`이미 완료한 공격에서 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);
+    result.partyId=party.id;result.partyName=party.name;result.nikkes=[...party.nikkes];result.element=party.element;result.plannedDamage=partyDamageForBoss(party,boss)||0;result.damage=damage;result.at=new Date().toISOString();
+    state.plan=null;await saveShared('완료 공격의 조합과 실제 딜을 수정했습니다. 남은 계획을 다시 계산합니다.');renderAll();
+    $('attack-detail-dialog').close();
+    setTimeout(()=>$('calculate')?.click(),0);
+  }else{
+    await saveActualFromPlan(Number(f.elements.attackIndex.value),damage);$('attack-detail-dialog').close();
+  }
+}catch(error){alert(error.message);}});
 
 let transferredState = null;
 try { if (window.name.startsWith('union-planner-state:')) { transferredState = validateState(JSON.parse(window.name.slice('union-planner-state:'.length))); window.name = ''; } } catch { window.name = ''; }
