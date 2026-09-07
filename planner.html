@@ -1,15 +1,42 @@
-
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10131b">
+  <title>UNION · 레이드 운영</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="planner.css">
+  <script src="data.js" defer></script>
+  <script src="characters.js" defer></script>
+  <script src="character-catalog.js" defer></script>
+  <script src="level_attack_power.js" defer></script>
+  <script src="planner.js" defer></script>
+  <script src="planner-optimizer-ui.js" defer></script>
+</head>
+<body>
+  <a id="build-badge" class="build-badge" href="https://github.com/mu0767/union/commits/main" target="_blank" rel="noopener" title="현재 웹 버전">build 확인 중…</a>
+  <header class="topbar"><a class="brand" href="index.html"><span class="logo">U</span> UNION <span class="divider">/</span><span class="brand-sub">RAID PLANNER</span></a><span class="status"><i></i> 운영 도구</span></header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">MATHEMATICAL RAID PLANNER</p><h1>유니온 레이드 운영<span>.</span></h1><p class="subtitle">남은 공격권과 파티 중복, 보스 진행을 함께 계산합니다.</p></div></section>
+    <nav class="tabs page-tabs" aria-label="페이지 선택"><a href="index.html">딜량 기록</a><a href="index.html#bosses">보스 정보</a><a class="active" href="planner.html" aria-current="page">레이드 운영</a></nav>
+    <p id="planner-status" class="planner-status" role="status" aria-live="polite">이 브라우저에 자동 저장됩니다.</p>
+    <section id="view-schedule" class="planner-view">
+      <div class="section-title"><div><p class="eyebrow">RAID PLAN</p><h2>공격 계획</h2></div><div class="schedule-actions"><button id="reset-plan" type="button">전체 초기화</button><button id="calculate" class="primary">최적 계획 계산</button></div></div>
+      <div id="plan-summary" class="summary-grid"></div>
+      <div id="plan-list" class="plan-list empty-card">계산 버튼을 누르면 운영 계획이 표시됩니다.</div>
     </section>
 
     <section id="view-settings" class="planner-view" hidden>
       <form id="raid-settings" class="settings-card"><div class="section-title"><div><p class="eyebrow">RAID CONFIGURATION</p><h2>레이드 설정</h2></div><button class="primary">설정 저장</button></div>
         <div class="form-grid"><label>레이드 시작<input name="startAt" type="datetime-local" required></label><label>레이드 종료<input name="endAt" type="datetime-local" required></label><label>공격 1회 소요 시간(분)<input name="attackMinutes" type="number" min="1" max="180" required></label><label>동시 공격<select name="simultaneous"><option value="false">한 번에 한 명</option><option value="true">여러 명 가능</option></select></label><label>최종보스 약점<select name="finalElement"><option>철갑</option><option>수냉</option><option>작열</option><option>풍압</option><option>전격</option></select></label><label>현재 시각<input name="now" type="datetime-local" required></label></div>
-        <p class="help">하루 경계는 오전 5시입니다. 최적화는 현재 시각부터 종료까지의 모든 시간대를 함께 봅니다.</p>
+        <p class="help">최적화는 현재 시각부터 종료까지의 모든 조건을 함께 봅니다.</p>
         <div class="party-heading"><div><h3>보스 정보</h3><p>Round 1~3 각 5명과 최종보스</p></div></div>
         <div class="table-scroll"><table class="party-table"><thead><tr><th>Round</th><th>이름</th><th>약점 속성</th><th>HP</th></tr></thead><tbody id="planner-boss-body"></tbody></table></div>
       </form>
     </section>
   </main>
+
   <dialog id="attack-detail-dialog">
     <div class="dialog-heading"><div><p class="eyebrow">ATTACK DETAIL</p><h2 id="attack-detail-title">공격 상세</h2></div><button type="button" id="attack-detail-close">닫기</button></div>
     <div id="attack-detail-body"></div>
