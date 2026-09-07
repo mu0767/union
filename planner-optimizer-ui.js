@@ -2,11 +2,9 @@
 
 (function installDeepOptimizer(){
   const calculateButton=$('calculate');
-  const recalculateButton=$('recalculate');
-  if(!calculateButton||!recalculateButton)return;
+  if(!calculateButton)return;
 
   calculateButton.removeEventListener('click',calculate);
-  recalculateButton.removeEventListener('click',calculate);
 
   const stageOf=plan=>plan?.summary?.reachedFinal?3:Math.max(0,Number(plan?.summary?.reachedRound||1)-1);
   const statusRank=plan=>plan?.status==='OPTIMAL'?1:0;
@@ -41,13 +39,15 @@
 
   async function calculateDeep(){
     if(calculateButton.disabled)return;
-    const buttons=[calculateButton,recalculateButton];
+    const buttons=[calculateButton];
     buttons.forEach(button=>{
       button.disabled=true;
       button.classList.add('is-calculating');
       button.dataset.label=button.textContent;
       button.textContent='전역 최적화 중…';
     });
+    state.plan=null;
+    renderSchedule();
     const snapshot=JSON.stringify({...state,plan:null});
     const started=Date.now();
     const wallBudgetMs=15000;
@@ -151,6 +151,5 @@
   }
 
   calculateButton.addEventListener('click',calculateDeep);
-  recalculateButton.addEventListener('click',calculateDeep);
   if(state?.plan)renderProof(state.plan);
 })();
