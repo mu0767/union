@@ -5,8 +5,8 @@ const SEED_ELEMENTS = ['철갑','수냉','작열','전격','풍압'];
 const displayNumber = value => Number(value || 0).toLocaleString('ko-KR');
 const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const characters = [...(window.NIKKE_CHARACTERS || [])].sort((a,b) => b.name.length-a.name.length);
-const characterImage = name => characters.find(c=>c.name===name)?.image || '';
+const characters = [...new Map([...(window.NIKKE_CHARACTER_CATALOG||[]),...(window.NIKKE_CHARACTERS||[])].map(x=>[x.name,x])).values()].sort((a,b)=>b.name.length-a.name.length);
+const characterImage = name => { const c=characters.find(x=>x.name===name); return c?.image || c?.source || ''; };
 const defaultBosses = [
   [99856279200,99856279200,150841813600,150841813600,99856279200],
   [149784418800,149784418800,226262720400,226262720400,149784418800],
