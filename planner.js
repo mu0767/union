@@ -110,13 +110,12 @@ function raidProgress(){
 }
 function bossOptions(currentOnly=false){const progress=raidProgress();const list=currentOnly?progress.bosses.filter(b=>!b.clear):state.bosses;return list.map(b=>`<option value="${b.id}">R${b.round===4?'최종':b.round} · ${escapeHTML(b.name)} · ${b.element}</option>`).join('')}
 function populateLiveForms(){
-  for(const form of [$('result-form'),$('lock-form')]){const current=form.elements.user.value;form.elements.user.innerHTML=state.users.filter(u=>u.active&&u.attacksLeft>0).map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');if([...form.elements.user.options].some(o=>o.value===current))form.elements.user.value=current;form.elements.boss.innerHTML=bossOptions(form.id==='result-form');updatePartySelect(form);}
+  const form=$('result-form');if(!form)return;const current=form.elements.user.value;form.elements.user.innerHTML=state.users.filter(u=>u.active&&u.attacksLeft>0).map(u=>`<option value="${u.id}">${escapeHTML(u.name)}</option>`).join('');if([...form.elements.user.options].some(o=>o.value===current))form.elements.user.value=current;form.elements.boss.innerHTML=bossOptions(true);updatePartySelect(form);
 }
 function updatePartySelect(form){const user=state.users.find(u=>u.id===form.elements.user.value);const used=new Set(state.results.filter(r=>r.userId===user?.id).flatMap(r=>r.nikkes||user?.parties.find(p=>p.id===r.partyId)?.nikkes||[]));form.elements.party.innerHTML=(user?.parties||[]).filter(p=>!p.nikkes.some(n=>used.has(n))).map(p=>`<option value="${p.id}">${escapeHTML(p.name)} · ${p.element}</option>`).join('')}
 function renderLive(){
   populateLiveForms();
   const progress=raidProgress();$('current-bosses').innerHTML=`<div class="summary-card"><small>현재 진행</small><strong>${progress.currentRound===4?'최종보스':`Round ${progress.currentRound}`}</strong></div>`+progress.bosses.map(b=>`<div class="summary-card"><small>${escapeHTML(b.name)} · ${b.element}</small><strong>${b.remaining==='infinite'?'∞':displayNumber(b.remaining)}</strong></div>`).join('');
-  $('lock-list').innerHTML=state.locks.length?state.locks.map(l=>compactEntry(l,'lock')).join(''):'<div class="empty-card">잠긴 공격이 없습니다.</div>';
   $('result-list').innerHTML=state.results.length?state.results.map(r=>compactEntry(r,'result')).join(''):'<div class="empty-card">완료된 공격이 없습니다.</div>';
   renderPlan(state.plan?.attacks?.filter(a=>a.isNow&&!planResultForAttack(a)),$('now-list'));
 }
@@ -223,7 +222,6 @@ function renderPlan(plan,target=$('plan-list')){
     return;
   }
 
-  const slots=parsePlanTimeSlots();
   const baseDamage={};for(const r of state.results)baseDamage[r.bossId]=(baseDamage[r.bossId]||0)+Number(r.damage||0);
   const attackCard=a=>{
     const idx=state.plan?.attacks?.indexOf(a)??-1;
@@ -239,24 +237,13 @@ function renderPlan(plan,target=$('plan-list')){
     </button>`;
   };
 
-  const slotBuckets=slots.map(()=>[]);
   const ordered=[...plan].sort((a,b)=>a.round-b.round||a.attackNumber-b.attackNumber||a.userName.localeCompare(b.userName));
-  // Time slots are display-only. Fill earlier selected slots first, while keeping
-  // round progression in order. Multiple users may attack simultaneously.
-  for(const attack of ordered){
-    const idx=Math.min(slots.length-1,Math.max(0,attack.round-1));
-    slotBuckets[idx].push(attack);
-  }
-
-  target.innerHTML=slots.map((slot,slotIndex)=>{
-    const attacks=slotBuckets[slotIndex];
-    const rounds=[...new Set(attacks.map(a=>a.round))].sort((a,b)=>a-b);
-    if(!rounds.length)return `<section class="raid-time-block"><h3>${escapeHTML(slot.label)}</h3><div class="empty-card">배치된 공격이 없습니다.</div></section>`;
-
-    return `<section class="raid-time-block"><h3>${escapeHTML(slot.label)}</h3>${rounds.map(round=>{
+  const rounds=[...new Set(ordered.map(a=>a.round))].sort((a,b)=>a-b);
+  target.innerHTML=rounds.map(round=>{
+      const attacks=ordered.filter(a=>a.round===round);
       const bosses=state.bosses.filter(b=>b.round===round);
       const rows=Math.max(1,...bosses.map(b=>attacks.filter(a=>a.bossId===b.id).length));
-      const cumulativeAttacks=slotBuckets.slice(0,slotIndex+1).flat();
+      const cumulativeAttacks=ordered.filter(a=>a.round<=round);
       const remaining=bosses.map(b=>{
         if(b.hp==='infinite')return '∞';
         const planned=cumulativeAttacks.filter(a=>a.bossId===b.id&&!planResultForAttack(a)).reduce((s,a)=>s+a.damage,0);
@@ -270,16 +257,15 @@ function renderPlan(plan,target=$('plan-list')){
       const alternatives=bosses.map(b=>{
         const attack=attacks.find(a=>a.bossId===b.id);
         if(!attack||planResultForAttack(attack))return [];
-        return alternativeCandidates(attack,slot);
+        return alternativeCandidates(attack,null);
       });
       return `<div class="raid-board-wrap"><div class="raid-round-label">R${round===4?'최종':round}</div><div class="raid-board" style="--cols:${bosses.length}">
-        <div class="raid-board-head"><span></span>${bosses.map(b=>`<strong>${escapeHTML(b.name)}<small>${escapeHTML(b.element)}</small></strong>`).join('')}</div>
+        <div class="raid-board-head"><span></span>${bosses.map(b=>`<strong>${escapeHTML(b.name)}<small>${escapeHTML(b.element)} · HP ${b.hp==='infinite'?'∞':displayNumber(b.hp)}</small></strong>`).join('')}</div>
         ${Array.from({length:rows},(_,row)=>`<div class="raid-board-row"><span class="raid-row-index">${row+1}</span>${bosses.map(b=>`<div class="raid-board-cell">${attacks.filter(a=>a.bossId===b.id)[row] ? attackCard(attacks.filter(a=>a.bossId===b.id)[row]) : ''}</div>`).join('')}</div>`).join('')}
         <div class="raid-board-footer"><span>남은 HP</span>${remaining.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-footer raid-board-overkill"><span>오버딜</span>${overkill.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-alts"><span>대체 후보</span>${alternatives.map(list=>`<div>${list.length?list.map(x=>`<button type="button" class="alt-candidate" title="${escapeHTML(x.party.name)} · ${x.party.nikkes.map(escapeHTML).join(' / ')}"><strong>${escapeHTML(x.user.name)}</strong><small>${formatPlannerDamage(x.user.id,x.party.element,x.damage,round)}</small></button>`).join(''):'<small class="no-alt">없음</small>'}</div>`).join('')}</div>
       </div></div>`;
-    }).join('')}</section>`;
   }).join('');
 }
 function renderSchedule(){
