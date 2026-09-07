@@ -136,19 +136,15 @@ async function calculate(){
   $('planner-status').textContent='남은 레이드 전체를 최적화하는 중…';
   try {
     const snapshot=JSON.stringify({...state,plan:null});
-    const plan=await new Promise((resolve,reject)=>{
-      const worker=new Worker('planner-solver-worker.js',{type:'module'});
-      const started=Date.now();
-      let phase='계산기 로딩 중…';
-      const updateStatus=()=>{$('planner-status').textContent=`[${Math.floor((Date.now()-started)/1000)}초] ${phase}`;};
-      updateStatus();
-      const ticker=setInterval(updateStatus,1000);
-      const finish=(error,plan)=>{clearInterval(ticker);clearTimeout(timeout);worker.terminate();error?reject(error):resolve(plan);};
-      const timeout=setTimeout(()=>finish(new Error('계산 시간이 3분을 초과했습니다. 입력은 유지됩니다. 현재 조건을 줄이거나 다시 계산해 주세요.')),180000);
-      worker.onmessage=({data})=>{if(data.progress){phase=data.progress;updateStatus();}else if(data.error)finish(new Error(data.error));else finish(null,data.plan);};
-      worker.onerror=()=>finish(new Error('계산기를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'));
-      worker.postMessage(JSON.parse(snapshot));
-    });
+    const started=Date.now();
+    let phase='계산기 로딩 중…';
+    const updateStatus=()=>{$('planner-status').textContent=`[${Math.floor((Date.now()-started)/1000)}초] ${phase}`;};
+    updateStatus();
+    const ticker=setInterval(updateStatus,1000);
+    const {solveRaid}=await import('./planner-solver.js');
+    phase='빠른 공격 계획 구성 중…';updateStatus();
+    const plan=await solveRaid(JSON.parse(snapshot),message=>{phase=message;updateStatus();});
+    clearInterval(ticker);
     if(snapshot!==JSON.stringify({...state,plan:null}))throw new Error('계산 중 입력이 변경됐습니다. 현재 입력으로 다시 계산해 주세요.');
     state.plan=plan;localSave(plan.status==='OPTIMAL'?'최적 계획 계산 완료 · 결과를 확인하세요.':'공격 계획 계산 완료 · 제한 시간 내 찾은 최선의 계획입니다.');renderTheory();renderLive();
   }
