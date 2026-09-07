@@ -24,7 +24,8 @@ export async function solveRaidCpSat(state, progress = () => {}) {
 
   const model=new CpModel('union-raid');
   const zero=model.newConstant(0);
-  const sum=items=>items.length?items.reduce((a,b)=>a.plus(b),zero.times(0)):zero.times(0);
+  const asExpr=value=>value?.toLinearExpr?value.toLinearExpr():value;
+  const sum=items=>items.reduce((acc,item)=>acc.plus(asExpr(item)),zero.times(0));
   const candidates=[];
 
   for(const user of users){
