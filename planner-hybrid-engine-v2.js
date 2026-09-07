@@ -26,6 +26,9 @@ export async function solveRaidHybrid(state,progress=()=>{}){
   }
   const remaining=b=>Math.max(0,Number(b.hp||0)-(actual.get(b.id)||0));
   const required=b=>Math.max(0,remaining(b)-tolerance);
+  // Planning may tolerate a small residual, but once a boss has any actual result,
+  // every remaining HP point becomes a hard cleanup requirement.
+  const exactRequired=b=>(actual.get(b.id)||0)>0?remaining(b):required(b);
   const powerFor=level=>{
     const ks=Object.keys(powerTable).map(Number).filter(k=>k<=Number(level)).sort((a,b)=>b-a);
     return ks.length?Number(powerTable[ks[0]]):null;
@@ -38,7 +41,7 @@ export async function solveRaidHybrid(state,progress=()=>{}){
     if(party.nikkes.some(n=>usedActual.get(user.id)?.has(n)))continue;
     for(const boss of bosses){
       if(party.element!==boss.element)continue;
-      if(boss.round!==4&&required(boss)===0)continue;
+      if(boss.round!==4&&exactRequired(boss)===0)continue;
       const damage=boss.round===4?(party.finalDamage??party.normalDamage):party.normalDamage;
       if(Number.isSafeInteger(damage)&&damage>0)raw.push({id:raw.length,user,party,boss,damage});
     }
@@ -72,7 +75,7 @@ export async function solveRaidHybrid(state,progress=()=>{}){
   // at a time and retain only promising partial covers instead of enumerating all combinations.
   function bundleCandidates(boss,base,limit=18){
     const already=base.filter(c=>c.boss.id===boss.id).reduce((s,c)=>s+c.damage,0);
-    const need=Math.max(0,required(boss)-already);if(need<=0)return [[]];
+    const need=Math.max(0,exactRequired(boss)-already);if(need<=0)return [[]];
     const all=(byBoss.get(boss.id)||[]).filter(c=>canAdd(base,c));
     if(!all.length)return [];
     const pool=[...all].sort((a,b)=>{
@@ -107,7 +110,7 @@ export async function solveRaidHybrid(state,progress=()=>{}){
 
   function stateScore(s){
     let waste=0,effSum=0,rare=0;
-    for(const b of normal){const d=s.sel.filter(c=>c.boss.id===b.id).reduce((x,c)=>x+c.damage,0);if(d)waste+=Math.max(0,d-required(b));}
+    for(const b of normal){const d=s.sel.filter(c=>c.boss.id===b.id).reduce((x,c)=>x+c.damage,0);if(d)waste+=Math.max(0,d-exactRequired(b));}
     for(const c of s.sel){effSum+=eff(c);rare+=rarityCost(c);}
     return waste/1e9+s.sel.length*0.10+rare*0.05-effSum*0.075;
   }
@@ -216,7 +219,16 @@ export async function solveRaidHybrid(state,progress=()=>{}){
   for(const u of users){const own=vars.filter(c=>c.user.id===u.id);model.add(sum(own.map(c=>c.x)).le(u.attacksLeft));const ns=new Set(own.flatMap(c=>c.party.nikkes));for(const n of ns)model.add(sum(own.filter(c=>c.party.nikkes.includes(n)).map(c=>c.x)).le(1));}
   const clear=[1,2,3].map(r=>model.newBoolVar('clear_r'+r));model.add(clear[1].minus(clear[0]).le(0));model.add(clear[2].minus(clear[1]).le(0));
   const assigned=new Map(),effective=new Map();
-  for(const b of normal){const cs=vars.filter(c=>c.boss.id===b.id),expr=sum(cs.map(c=>c.x.times(c.damage)));assigned.set(b.id,expr);model.add(expr.ge(clear[b.round-1].times(required(b))));const e=model.newIntVar(0,remaining(b),'eff_'+b.id);model.add(e.le(expr));effective.set(b.id,e);}
+  for(const b of normal){
+    const cs=vars.filter(c=>c.boss.id===b.id),expr=sum(cs.map(c=>c.x.times(c.damage)));
+    assigned.set(b.id,expr);
+    model.add(expr.ge(clear[b.round-1].times(required(b))));
+    if((actual.get(b.id)||0)>0&&remaining(b)>0){
+      if(!cs.length)throw new Error(`${b.name}에 실제 잔여 HP ${remaining(b).toLocaleString('ko-KR')}가 있지만 추가 공격 가능한 파티가 없습니다.`);
+      model.add(expr.ge(remaining(b)));
+    }
+    const e=model.newIntVar(0,remaining(b),'eff_'+b.id);model.add(e.le(expr));effective.set(b.id,e);
+  }
   for(const c of vars){if(c.boss.round===2)model.add(c.x.minus(clear[0]).le(0));else if(c.boss.round===3)model.add(c.x.minus(clear[1]).le(0));else if(c.boss.round===4)model.add(c.x.minus(clear[2]).le(0));}
   for(const lock of state.locks||[]){const c=vars.find(x=>x.user.id===lock.userId&&x.party.id===lock.partyId&&x.boss.id===lock.bossId);if(!c)throw new Error('잠긴 공격 중 배치할 수 없는 항목이 있습니다.');model.add(c.x.equals(1));}
   const hev=evalPlan(heuristic),hintKeys=new Set(heuristic.map(keyOf));for(const c of vars)model.addHint(c.x,hintKeys.has(keyOf(c))?1:0);for(let r=0;r<3;r++)model.addHint(clear[r],hev.stage>r?1:0);
@@ -240,7 +252,14 @@ export async function solveRaidHybrid(state,progress=()=>{}){
   const wastes=[];for(const b of normal.filter(b=>b.round<targetRound)){const mx=vars.filter(c=>c.boss.id===b.id).reduce((s,c)=>s+c.damage,0);if(!mx)continue;const w=model.newIntVar(0,Math.max(0,mx-required(b)),'w_'+b.id);model.add(w.ge(assigned.get(b.id).minus(required(b))));wastes.push(w);}
   if(wastes.length&&timeLeft()>0.15){const r3=solve('전역 개선 3/3 · 앞 라운드 낭비 정리 중…',sum(wastes),'min',timeLeft());if(r3&&feasible(r3.status))result=r3;}
 
-  let selected=vars.filter(c=>result.value(c.x)>0.5).map(({x,...c})=>c);const sanity=localSwap(selected,10);selected=sanity.sel;
+  let selected=vars.filter(c=>result.value(c.x)>0.5).map(({x,...c})=>c);
+  // Do not let post-solve local swaps undo hard cleanup assignments.
+  const hasExactCleanup=normal.some(b=>(actual.get(b.id)||0)>0&&remaining(b)>0);
+  const sanity=hasExactCleanup?{sel:selected,passes:0}:localSwap(selected,10);selected=sanity.sel;
+  for(const b of normal.filter(b=>(actual.get(b.id)||0)>0&&remaining(b)>0)){
+    const assignedDamage=selected.filter(c=>c.boss.id===b.id).reduce((s,c)=>s+c.damage,0);
+    if(assignedDamage<remaining(b))throw new Error(`${b.name} 실제 잔여 HP ${remaining(b).toLocaleString('ko-KR')} 마무리 배치가 누락되었습니다.`);
+  }
   const ev=evalPlan(selected),bossOrder=new Map(bosses.map((b,i)=>[b.id,i]));selected.sort((a,b)=>a.boss.round-b.boss.round||(bossOrder.get(a.boss.id)-bossOrder.get(b.boss.id))||a.user.name.localeCompare(b.user.name));
   const rem=new Map(bosses.map(b=>[b.id,b.round===4?'infinite':remaining(b)])),counts=new Map();const origin=new Date(state.settings?.startAt||Date.now()),pad=n=>String(n).padStart(2,'0'),iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const attacks=selected.map(c=>{const before=rem.get(c.boss.id),after=before==='infinite'?'infinite':Math.max(0,before-c.damage),over=before==='infinite'?0:Math.max(0,c.damage-before);rem.set(c.boss.id,after);add(counts,c.user.id,1);return{start:iso(new Date(origin.getTime()+(c.boss.round-1)*3600000)),timeLabel:'',isNow:false,userId:c.user.id,userName:c.user.name,partyId:c.party.id,partyName:c.party.name,nikkes:[...c.party.nikkes],bossId:c.boss.id,bossName:c.boss.name,round:c.boss.round,element:c.boss.element,damage:c.damage,beforeHp:before,afterHp:after,overkill:over,attackNumber:(resultCount.get(c.user.id)||0)+(counts.get(c.user.id)||0)};});
