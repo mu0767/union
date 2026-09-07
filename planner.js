@@ -483,7 +483,7 @@ function openAttackDetail(index){
     <div class="attack-detail-used"><strong>이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
   const result=planResultForAttack(attack);
   const f=$('attack-actual-form');f.elements.attackIndex.value=String(index);f.elements.damage.value=result?displayNumber(result.damage):'';
-  f.querySelector('button[type="submit"]').textContent=result?'실제 딜 수정':'실제 결과 저장';
+  f.querySelector('button').textContent=result?'실제 딜 수정':'실제 결과 저장';
   $('attack-detail-dialog').showModal();
 }
 async function saveActualFromPlan(index,damage){
