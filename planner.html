@@ -1,34 +1,3 @@
-<!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#10131b">
-  <title>UNION · 레이드 운영</title>
-  <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="planner.css">
-  <script src="data.js" defer></script>
-  <script src="characters.js" defer></script>
-  <script src="character-catalog.js" defer></script>
-  <script src="level_attack_power.js" defer></script>
-  <script src="planner.js" defer></script>
-  <script src="planner-optimizer-ui.js" defer></script>
-</head>
-<body>
-  <a id="build-badge" class="build-badge" href="https://github.com/mu0767/union/commits/main" target="_blank" rel="noopener" title="현재 웹 버전">build 확인 중…</a>
-  <header class="topbar"><a class="brand" href="index.html"><span class="logo">U</span> UNION <span class="divider">/</span><span class="brand-sub">RAID PLANNER</span></a><span class="status"><i></i> 운영 도구</span></header>
-  <main>
-    <section class="intro"><div><p class="eyebrow">MATHEMATICAL RAID PLANNER</p><h1>유니온 레이드 운영<span>.</span></h1><p class="subtitle">남은 공격권과 시간, 파티 중복, 보스 진행을 함께 계산합니다.</p></div></section>
-    <nav class="tabs page-tabs" aria-label="페이지 선택"><a href="index.html">딜량 기록</a><a href="index.html#bosses">보스 정보</a><a class="active" href="planner.html" aria-current="page">레이드 운영</a></nav>
-    <p id="planner-status" class="planner-status" role="status" aria-live="polite">이 브라우저에 자동 저장됩니다.</p>
-    <section id="view-schedule" class="planner-view">
-      <div class="section-title"><div><p class="eyebrow">RAID PLAN</p><h2>공격 계획</h2></div><div class="schedule-actions"><button id="reset-plan" type="button">전체 초기화</button><button id="calculate" class="primary">최적 계획 계산</button></div></div>
-      <div id="plan-summary" class="summary-grid"></div><div id="plan-list" class="plan-list empty-card">계산 버튼을 누르면 운영 계획이 표시됩니다.</div>
-
-      <div class="live-grid"><div><div class="section-title"><div><p class="eyebrow">ACTUAL RESULT</p><h2>실제 공격 입력</h2></div></div><form id="result-form" class="stack-form"><label>공격 유저<select name="user" required></select></label><label>사용 파티<select name="party" required></select></label><label>공격 보스<select name="boss" required></select></label><label>실제 딜<input name="damage" inputmode="numeric" required placeholder="예: 720,000,000"></label><button class="primary">결과 저장</button></form></div></div>
-      <div class="section-title top-gap"><div><p class="eyebrow">CURRENT OPERATION</p><h2>현재 상태</h2></div></div>
-      <div id="current-bosses" class="summary-grid"></div>
-      <h3>완료된 공격</h3><div id="result-list" class="compact-list"></div><h3>지금 추천</h3><div id="now-list" class="plan-list empty-card">재계산 후 표시됩니다.</div>
 
     </section>
 
