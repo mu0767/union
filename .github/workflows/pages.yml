@@ -59,6 +59,22 @@ jobs:
           python build-shared-site.py
           node verify-managed-store.mjs
           rm -rf dist
+      - name: Stamp deployed version and bust asset cache
+        shell: bash
+        run: |
+          printf '%s\n' "$GITHUB_SHA" > build.txt
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          sha = os.environ['GITHUB_SHA']
+          for name in ('planner.html', 'index.html'):
+              path = Path(name)
+              if not path.exists():
+                  continue
+              text = path.read_text(encoding='utf-8')
+              text = re.sub(r'((?:src|href)="(?!https?:|#)([^"?]+\.(?:js|css)))(?:\?[^" ]*)?"', lambda m: f'{m.group(1)}?v={sha}"', text)
+              path.write_text(text, encoding='utf-8')
+          PY
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site
