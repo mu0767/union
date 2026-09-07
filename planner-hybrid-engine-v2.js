@@ -111,8 +111,37 @@ export async function solveRaidHybrid(state,progress=()=>{}){
     return waste/1e9+s.sel.length*0.10+rare*0.05-effSum*0.075;
   }
 
+  // Completed attacks are immutable history. If their real damage leaves HP behind,
+  // first build a forced repair allocation from remaining legal resources so the
+  // optimizer never behaves as if an already-used better attack were still available.
+  function forcedRepair(base){
+    let sel=[...base];
+    for(const round of [1,2,3]){
+      for(const boss of normal.filter(b=>b.round===round)){
+        const done=(actual.get(boss.id)||0)+sel.filter(c=>c.boss.id===boss.id).reduce((s,c)=>s+c.damage,0);
+        let need=Math.max(0,Number(boss.hp||0)-tolerance-done);
+        if(need<=0)continue;
+        const pool=(byBoss.get(boss.id)||[]).filter(c=>canAdd(sel,c)).sort((a,b)=>{
+          const ao=Math.max(0,a.damage-need),bo=Math.max(0,b.damage-need);
+          return ao-bo||Math.abs(a.damage-need)-Math.abs(b.damage-need)||eff(b)-eff(a)||a.damage-b.damage;
+        });
+        for(const cand of pool){
+          if(!canAdd(sel,cand))continue;
+          sel.push(cand);need-=cand.damage;
+          if(need<=0)break;
+        }
+        if(need>0)return{ok:false,sel,boss,missing:need};
+      }
+    }
+    return{ok:true,sel};
+  }
+
+  progress('완료 공격 반영 · 남은 HP 강제 보정 배치 중…');
+  const repaired=forcedRepair([]);
+  const repairSeed=repaired.sel;
+
   progress('초기 Beam Search · 라운드 자원 배치 중…');
-  let beam=[{sel:[]}],reached=0;
+  let beam=[{sel:repairSeed}],reached=0;
   const BEAM=24;
   for(const round of [1,2,3]){
     let roundBeam=beam,ok=true;
