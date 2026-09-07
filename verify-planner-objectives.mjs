@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { solveRaidHybrid } from './planner-hybrid-engine-v2.js';
+import { solveRaidHybrid } from './planner-hybrid-engine-v3.js';
 
 const elements=['철갑','수냉','작열','풍압','전격'];
 function fixture(reachedFinal){
