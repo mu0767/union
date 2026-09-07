@@ -36,10 +36,10 @@ const done=(list,except=[])=>list.filter(b=>b.round!==4&&!except.includes(b.id))
   const plan=await solveRaidHybrid({users,bosses:bs,results,locks:[],settings:{startAt:'2026-09-07T05:00',damageTolerance:1_000_000_000},__solverMaxSeconds:8,__solverSeed:2});
   assert.equal(plan.summary.reachedFinal,true);
   const r1=plan.attacks.filter(a=>a.round===1);
-  assert.deepEqual(r1.map(a=>a.partyId),['fit-fire']);
-  assert.equal(r1[0].afterHp,703_934_239);
-  assert.equal(r1[0].overkill,0);
-  console.log('PASS: tolerance threshold prefers low-waste clear');
+  assert.deepEqual(r1.map(a=>a.partyId),['over-fire']);
+  assert.equal(r1[0].afterHp,0);
+  assert(r1[0].overkill>0);
+  console.log('PASS: actual residual HP ignores planning tolerance and is cleared exactly');
 }
 
 {
@@ -75,4 +75,22 @@ const done=(list,except=[])=>list.filter(b=>b.round!==4&&!except.includes(b.id))
   const r1=plan.attacks.filter(a=>a.bossId==='1-철갑');
   assert.deepEqual(r1.map(a=>a.partyId),['p205']);
   console.log('PASS: 2:1 neighborhood cleanup prefers one fitting attack');
+}
+
+
+{
+  const bs=bosses();
+  const target=bs.find(b=>b.id==='1-전격');
+  target.name='리빌드 빅 토르소';
+  target.hp=100_000_000_000;
+  const results=done(bs,['1-전격']);
+  results.push({userId:'done',bossId:'1-전격',damage:99_655_495_183,nikkes:[]});
+  const users=[
+    {id:'closer',name:'마무리',active:true,attacksLeft:1,parties:[party('closer-electric','전격',1_000_000_000,['q1','q2','q3','q4','q5'])]}
+  ];
+  const plan=await solveRaidHybrid({users,bosses:bs,results,locks:[],settings:{startAt:'2026-09-07T05:00',damageTolerance:1_000_000_000},__solverMaxSeconds:8,__solverSeed:5});
+  const hit=plan.attacks.find(a=>a.bossId==='1-전격');
+  assert(hit,'344,504,817 residual HP must receive an additional attack');
+  assert.equal(hit.afterHp,0);
+  console.log('PASS: sub-1B actual residual receives mandatory cleanup attack');
 }
