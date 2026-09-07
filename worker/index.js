@@ -1,7 +1,29 @@
-// Build injects ASSETS, INITIAL_STORE and the shared mergeBossChanges_ validator.
+// Build injects ASSETS and INITIAL_STORE.
 const json = (value, status = 200) => new Response(JSON.stringify(value), {
   status, headers:{'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store'}
 });
+function mergeBossChanges_(store, changes) {
+  if (!Array.isArray(changes) || !changes.length || changes.length > 48) throw new Error('변경 목록 오류');
+  const next = JSON.parse(JSON.stringify(store));
+  const touched = new Set(), keys = new Set();
+  for (const change of changes) {
+    const {round,index,field,before,value}=change;
+    if (!Number.isInteger(round)||round<1||round>4||!Number.isInteger(index)||index<0||!next.rounds[round][index]||!['name','element','hp'].includes(field)) throw new Error('변경 위치 오류');
+    const key=`${round}:${index}:${field}`;
+    if(keys.has(key))throw new Error('중복 변경');
+    keys.add(key);
+    if(field==='name'&&(typeof value!=='string'||!value.trim()||value.length>80))throw new Error('이름 형식 오류');
+    if(field==='element'&&!['철갑','수냉','작열','전격','풍압'].includes(value))throw new Error('속성 형식 오류');
+    if(field==='hp'&&(round===4?value!=='infinite':!Number.isSafeInteger(value)||value<=0))throw new Error('체력 형식 오류');
+    const boss=next.rounds[round][index];
+    if(boss[field]===value)continue;
+    if(boss[field]!==before)throw new Error(`${round}단계 ${index+1}번 ${field}: 다른 사용자가 수정했습니다. 최신 값으로 입력을 되돌린 뒤 다시 수정해 주세요.`);
+    boss[field]=value;touched.add(`${round}:${index}`);
+  }
+  touched.forEach(key=>{const [round,index]=key.split(':');next.revisions[round][index]++;});
+  if(touched.size)next.version++;
+  return next;
+}
 async function readStore(db) {
   let row = await db.prepare('SELECT version, data FROM shared_bosses WHERE id = 1').first();
   if (!row) {
@@ -19,7 +41,6 @@ async function saveChanges(db, changes) {
     const result = await db.prepare('UPDATE shared_bosses SET version = ?, data = ? WHERE id = 1 AND version = ?')
       .bind(version, JSON.stringify(data), current.version).run();
     if (result.meta.changes === 1) return next;
-    // A competing write won: reread and merge only the submitted fields.
     await new Promise(resolve => setTimeout(resolve, 10 + Math.random() * Math.min(400, 20 * 2 ** attempt)));
   }
   throw new Error('다른 저장이 많습니다. 입력은 유지됩니다. 잠시 후 다시 저장해 주세요.');
