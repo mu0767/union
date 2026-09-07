@@ -6,6 +6,6 @@
     "esbuild": "0.25.9"
   },
   "scripts": {
-    "build:cpsat": "mkdir -p vendor/cpsat vendor/build/portable && esbuild cpsat-vendor-entry.js --bundle --format=esm --platform=browser --outfile=vendor/cpsat/index.js && cp node_modules/cpsat-js/build/portable/cpsat.mjs vendor/build/portable/cpsat.mjs && cp node_modules/cpsat-js/build/portable/cpsat.wasm vendor/build/portable/cpsat.wasm"
+    "build:cpsat": "mkdir -p vendor/cpsat vendor/build/portable && esbuild cpsat-vendor-entry.js --bundle --format=esm --platform=browser --external:node:* --outfile=vendor/cpsat/index.js && cp node_modules/cpsat-js/build/portable/cpsat.mjs vendor/build/portable/cpsat.mjs && cp node_modules/cpsat-js/build/portable/cpsat.wasm vendor/build/portable/cpsat.wasm"
   }
 }
