@@ -142,7 +142,7 @@
       renderLive();
       const proof=plan.status==='OPTIMAL'?'실전 최선해 · 최적성 증명':'실전 최선해';
       const o=plan.summary.optimization||{};
-      localSave(`${proof} · 도달 ${o.stage||'-'} / 목표딜 ${o.target||'-'} / 낭비 ${o.waste||'-'} · ${plan.attacks.length}개 공격 · ${plan.summary.reachedFinal?'최종보스 딜':`R${plan.summary.reachedRound} 유효 딜`} ${displayNumber(plan.summary.targetDamage)} · 계획 낭비 ${displayNumber(plan.summary.planningWaste||0)} · 실제 오버딜 ${displayNumber(plan.summary.totalOverkill)}`);
+      await saveShared(`${proof} · 도달 ${o.stage||'-'} / 목표딜 ${o.target||'-'} / 낭비 ${o.waste||'-'} · ${plan.attacks.length}개 공격 · ${plan.summary.reachedFinal?'최종보스 딜':`R${plan.summary.reachedRound} 유효 딜`} ${displayNumber(plan.summary.targetDamage)} · 계획 낭비 ${displayNumber(plan.summary.planningWaste||0)} · 실제 오버딜 ${displayNumber(plan.summary.totalOverkill)}`);
     }catch(error){
       $('planner-status').textContent=`계산 실패: ${error.message}`;
     }finally{
