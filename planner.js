@@ -121,12 +121,13 @@ function renderLive(){
 }
 function compactEntry(entry,type){const u=state.users.find(x=>x.id===entry.userId),p=u?.parties.find(x=>x.id===entry.partyId),b=state.bosses.find(x=>x.id===entry.bossId);return`<div class="compact-item"><span>${escapeHTML(entry.userName||u?.name||'삭제된 유저')} · ${escapeHTML(entry.partyName||p?.name||'삭제된 파티')} → ${escapeHTML(entry.bossName||b?.name||'삭제된 보스')}${entry.damage!=null?` · ${displayNumber(entry.damage)}`:''}</span>${type==='lock'?`<button data-remove-lock="${entry.id}">잠금 해제</button>`:'<small>완료 확정</small>'}</div>`}
 function parsePlanTimeSlots(){
-  const raw=$('plan-time-slots')?.value||state.settings.planTimeSlots||'05:00-10:00, 10:00-15:00, 15:00-20:00, 20:00-05:00';
-  const slots=raw.split(',').map(x=>x.trim()).filter(Boolean).map(text=>{
-    const m=text.match(/^((?:[01]\\d|2[0-3]):[0-5]\\d)\\s*-\\s*((?:[01]\\d|2[0-3]):[0-5]\\d)$/);
-    return m?{label:`${m[1]}~${m[2]}`,start:m[1],end:m[2]}:null;
-  }).filter(Boolean);
-  return slots.length?slots:[{label:'전체',start:'00:00',end:'00:00'}];
+  const boxes=[...document.querySelectorAll('#plan-time-slots input[type="checkbox"]')];
+  const selected=boxes.filter(input=>input.checked).map(input=>input.value);
+  const values=selected.length?selected:['05:00-10:00','10:00-15:00','15:00-20:00','20:00-05:00'];
+  return values.map(text=>{
+    const [start,end]=text.split('-');
+    return {label:text,start,end};
+  });
 }
 function timeInSlot(date,slot){
   const [sh,sm]=slot.start.split(':').map(Number),[eh,em]=slot.end.split(':').map(Number);
@@ -344,13 +345,13 @@ $('lock-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-remove-lock]');if(b){state.locks=state.locks.filter(x=>x.id!==b.dataset.removeLock);state.plan=null;await saveShared('공격 잠금을 해제했습니다.');renderAll()}});
 $('raid-settings').addEventListener('submit',async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));if(new Date(values.startAt)>=new Date(values.endAt))return alert('종료 시각은 시작보다 늦어야 합니다.');const rows=[...$('planner-boss-body').querySelectorAll('tr')];try{state.bosses=rows.map((row,index)=>{const raw=row.querySelector('[name=bossHp]').value.trim();const final=index===rows.length-1;const hp=/^(무한|infinite|∞)$/i.test(raw)?'infinite':Number(raw.replace(/,/g,''));if((!final&&hp==='infinite')||(hp!=='infinite'&&(!Number.isSafeInteger(hp)||hp<=0)))throw new Error('일반 보스 HP는 0보다 큰 정수여야 합니다.');const prior=state.bosses.find(b=>b.id===row.dataset.bossId);return{...prior,name:row.querySelector('[name=bossName]').value.trim(),element:row.querySelector('[name=bossElement]').value,hp}});for(const round of [1,2,3])if(new Set(state.bosses.filter(b=>b.round===round).map(b=>b.element)).size!==5)throw new Error(`Round ${round}에는 5개 속성을 하나씩 선택해야 합니다.`)}catch(error){return alert(error.message)}state.settings={...values,attackMinutes:Number(values.attackMinutes),simultaneous:values.simultaneous==='true',finalElement:state.bosses.at(-1).element};state.plan=null;await saveShared('레이드와 보스 설정을 저장했습니다.');renderAll()});
 $('calculate').addEventListener('click',calculate);$('recalculate').addEventListener('click',calculate);
-$('plan-time-slots')?.addEventListener('change',()=>{state.settings.planTimeSlots=$('plan-time-slots').value;localSave();renderTheory();});
+$('plan-time-slots')?.addEventListener('change',()=>{renderTheory();});
 document.addEventListener('click',e=>{const card=e.target.closest('[data-plan-index]');if(card)openAttackDetail(Number(card.dataset.planIndex));});
 $('attack-detail-close')?.addEventListener('click',()=>$('attack-detail-dialog').close());
 $('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜량은 0 이상의 정수여야 합니다.');try{await saveActualFromPlan(Number(f.elements.attackIndex.value),damage);$('attack-detail-dialog').close();}catch(error){alert(error.message);}});
 let transferredState = null;
 try { if (window.name.startsWith('union-planner-state:')) { transferredState = validateState(JSON.parse(window.name.slice('union-planner-state:'.length))); window.name = ''; } } catch { window.name = ''; }
-try{state=transferredState||validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed())}catch{state=parseUnionRaidSeed()}ensurePlanningSettings();if($('plan-time-slots'))$('plan-time-slots').value=state.settings.planTimeSlots||$('plan-time-slots').value;selectedUser=state.users[0]?.id||null;renderAll();
+try{state=transferredState||validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed())}catch{state=parseUnionRaidSeed()}ensurePlanningSettings();selectedUser=state.users[0]?.id||null;renderAll();
 if(new URLSearchParams(location.search).get('calculate')==='1'){history.replaceState(null,'',location.pathname);setTimeout(calculate,0)}
 
 (async function showBuild(){
