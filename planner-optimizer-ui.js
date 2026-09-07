@@ -102,6 +102,12 @@
               updateStatus();
               return;
             }
+            if(data.provisionalPlan){
+              if(betterPlan(data.provisionalPlan,best))best=data.provisionalPlan;
+              phase=portfolioCount===1?'초기 실행 가능 계획 확보 · 추가 개선 중…':`탐색 ${index+1}/${portfolioCount} · 초기 실행 가능 계획 확보 · 추가 개선 중…`;
+              updateStatus();
+              return;
+            }
             if(data.plan&&betterPlan(data.plan,best))best=data.plan;
             if(data.plan?.status==='OPTIMAL'&&!resolved){
               resolved=true;
