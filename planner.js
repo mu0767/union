@@ -199,8 +199,17 @@ function renderPlan(plan,target=$('plan-list')){
     </button>`;
   };
 
-  target.innerHTML=slots.map(slot=>{
-    const attacks=plan.filter(a=>timeInSlot(new Date(a.start),slot));
+  const slotBuckets=slots.map(()=>[]);
+  const ordered=[...plan].sort((a,b)=>a.round-b.round||a.attackNumber-b.attackNumber||a.userName.localeCompare(b.userName));
+  // Time slots are display-only. Fill earlier selected slots first, while keeping
+  // round progression in order. Multiple users may attack simultaneously.
+  for(const attack of ordered){
+    const idx=Math.min(slots.length-1,Math.max(0,attack.round-1));
+    slotBuckets[idx].push(attack);
+  }
+
+  target.innerHTML=slots.map((slot,slotIndex)=>{
+    const attacks=slotBuckets[slotIndex];
     const rounds=[...new Set(attacks.map(a=>a.round))].sort((a,b)=>a-b);
     if(!rounds.length)return `<section class="raid-time-block"><h3>${escapeHTML(slot.label)}</h3><div class="empty-card">배치된 공격이 없습니다.</div></section>`;
 
