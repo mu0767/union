@@ -16,6 +16,7 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   const maxSeconds=Math.max(1,Math.min(300,Number(state.__solverMaxSeconds??state.settings?.solverMaxSeconds??300)||300));
   const seed=Math.max(1,Math.floor(Number(state.__solverSeed)||1));
   const hardware=Math.max(1,Math.floor(Number(globalThis.navigator?.hardwareConcurrency)||1));
+  const attackPowerTable=state.__levelAttackPower||{};
   const solverWorkers=globalThis.crossOriginIsolated===true?Math.min(8,hardware):1;
   if(!Number.isSafeInteger(tolerance)||tolerance<0)throw new Error('허용 딜 오차는 0 이상의 정수여야 합니다.');
   if(normal.length!==15||!final)throw new Error('보스 정보가 올바르지 않습니다.');
@@ -54,6 +55,39 @@ export async function solveRaidCpSat(state, progress = () => {}) {
     }
   }
   if(!candidates.length)throw new Error('배치 가능한 공격 후보가 없습니다.');
+
+  // Good-first search: rank each party by level-normalized performance inside
+  // its element. This is guidance only; every candidate stays in the model, so
+  // CP-SAT can freely break the preferred assignment when a global swap is better.
+  const powerFor=level=>{
+    const keys=Object.keys(attackPowerTable).map(Number).filter(k=>k<=Number(level)).sort((a,b)=>b-a);
+    return keys.length?Number(attackPowerTable[keys[0]]):null;
+  };
+  const normalizedByElement=new Map();
+  for(const user of users){
+    const power=powerFor(user.level);
+    if(!power)continue;
+    for(const party of user.parties||[]){
+      if(!Number.isSafeInteger(party.normalDamage)||party.normalDamage<=0)continue;
+      const list=normalizedByElement.get(party.element)||[];
+      list.push(party.normalDamage/power);
+      normalizedByElement.set(party.element,list);
+    }
+  }
+  const medianByElement=new Map();
+  for(const [element,values] of normalizedByElement){
+    values.sort((a,b)=>a-b);
+    const middle=Math.floor(values.length/2);
+    medianByElement.set(element,values.length%2?values[middle]:(values[middle-1]+values[middle])/2);
+  }
+  const efficiencyOf=c=>{
+    const power=powerFor(c.user.level),median=medianByElement.get(c.boss.element);
+    return power&&median?c.damage/power/median:1;
+  };
+  const preferred=[...candidates].sort((a,b)=>
+    efficiencyOf(b)-efficiencyOf(a) ||
+    b.damage-a.damage
+  );
 
   for(const user of users){
     const own=candidates.filter(c=>c.user.id===user.id);
@@ -118,6 +152,18 @@ export async function solveRaidCpSat(state, progress = () => {}) {
     for(const c of candidates)model.addHint(c.x,result.value(c.x));
     for(const v of clear)model.addHint(v,result.value(v));
   };
+  const seedEfficiencyHints=()=>{
+    model.clearHints();
+    // Hint efficient attacks first, but never force or remove a candidate.
+    // Conflicting hints are harmless guidance; the solver may ignore them.
+    const hinted=new Set();
+    for(const c of preferred){
+      const key=c.user.id+'|'+c.party.id;
+      if(hinted.has(key))continue;
+      model.addHint(c.x,1);
+      hinted.add(key);
+    }
+  };
 
   // The real raid has damage variance. Do not spend minutes proving a difference
   // smaller than the user's accepted tolerance. Preserve a cleanup budget so a
@@ -127,7 +173,8 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   const stageBudget=Math.min(30,Math.max(5,maxSeconds*0.10));
   const optimization={stage:'SKIPPED',target:'SKIPPED',waste:'SKIPPED'};
 
-  let result=solvePhase('1/3 최대 도달 라운드 탐색 중…',stageExpr,'max',stageBudget);
+  seedEfficiencyHints();
+  let result=solvePhase('1/3 효율 우선 초기해 · 최대 도달 라운드 탐색 중…',stageExpr,'max',stageBudget);
   if(!result||!feasible(result.status))throw new Error('CP-SAT이 실행 가능한 공격 계획을 찾지 못했습니다.');
   optimization.stage=statusText(result.status);
   const bestStage=Math.round(result.value(clear[0])+result.value(clear[1])+result.value(clear[2]));
@@ -146,6 +193,9 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   // Never let the practical band exceed 1% of the reachable target scale. This
   // keeps tiny fixtures and late-raid scraps precise while real multi-billion
   // damage still uses the user's 1B tolerance.
+  // We want a strong practical plan, not a proof of the last won. Treat a small
+  // target-damage delta as equivalent and spend the saved search on global swaps
+  // and waste cleanup. Default: accepted raid tolerance, capped at 1% of scale.
   const targetGranularity=Math.min(requestedGranularity,Math.max(1,Math.floor(targetMax/100)));
   const maxBand=Math.max(0,Math.floor(targetMax/targetGranularity));
   const targetBand=model.newIntVar(0,maxBand,'target_band');
@@ -259,7 +309,9 @@ export async function solveRaidCpSat(state, progress = () => {}) {
       solverWorkers,
       seed,
       elapsedSeconds:Math.round((Date.now()-startedAt)/1000),
-      cleanupReserveSeconds:cleanupReserve
+      cleanupReserveSeconds:cleanupReserve,
+      searchPolicy:'efficiency-hint-global-improvement',
+      preferredCandidateCount:preferred.length
     }
   };
 }
