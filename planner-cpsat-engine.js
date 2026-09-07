@@ -55,8 +55,8 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   }
 
   const clear=[1,2,3].map(r=>model.newBoolVar('clear_r'+r));
-  model.add(clear[1].le(clear[0]));
-  model.add(clear[2].le(clear[1]));
+  model.add(clear[1].minus(clear[0]).le(0));
+  model.add(clear[2].minus(clear[1]).le(0));
 
   const bossDamageExpr=new Map();
   const overVars=[];
@@ -74,9 +74,9 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   }
 
   for(const c of candidates){
-    if(c.boss.round===2)model.add(c.x.le(clear[0]));
-    else if(c.boss.round===3)model.add(c.x.le(clear[1]));
-    else if(c.boss.round===4)model.add(c.x.le(clear[2]));
+    if(c.boss.round===2)model.add(c.x.minus(clear[0]).le(0));
+    else if(c.boss.round===3)model.add(c.x.minus(clear[1]).le(0));
+    else if(c.boss.round===4)model.add(c.x.minus(clear[2]).le(0));
   }
 
   for(const lock of state.locks||[]){
