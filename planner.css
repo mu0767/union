@@ -17,3 +17,11 @@
 .alt-candidate small{color:var(--muted)}
 .no-alt{color:var(--muted)}
 @media(max-width:700px){.raid-board-alts{grid-template-columns:36px repeat(var(--cols,5),minmax(145px,1fr))}}
+
+.raid-slot-portraits{display:flex;gap:4px;margin:7px 0 5px}
+.raid-slot-portraits img,.raid-slot-portraits span{width:28px;height:28px;border-radius:6px;object-fit:cover;border:1px solid #3a4358;background:#202637;display:grid;place-items:center;font-size:10px}
+.attack-detail-portraits{display:grid;grid-template-columns:repeat(5,minmax(90px,1fr));gap:10px;margin-top:12px}
+.attack-detail-portraits figure{margin:0;padding:8px;border:1px solid var(--line);border-radius:10px;background:#1b2130;text-align:center}
+.attack-detail-portraits img{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:8px}
+.attack-detail-portraits figcaption{margin-top:6px;font-size:10px;color:var(--muted);line-height:1.3}
+@media(max-width:700px){.attack-detail-portraits{grid-template-columns:repeat(5,minmax(70px,1fr))}.raid-slot-portraits img,.raid-slot-portraits span{width:24px;height:24px}}
