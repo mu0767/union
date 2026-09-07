@@ -50,9 +50,9 @@
     });
     const snapshot=JSON.stringify({...state,plan:null});
     const started=Date.now();
-    const wallBudgetMs=60000;
+    const wallBudgetMs=30000;
     const deadline=started+wallBudgetMs;
-    let phase='60초 실전 최적화 준비 중…';
+    let phase='30초 실전 최적화 준비 중…';
     const updateStatus=()=>{$('planner-status').textContent=`[${Math.floor((Date.now()-started)/1000)}초] ${phase}`;};
     updateStatus();
     const ticker=setInterval(updateStatus,1000);
@@ -71,7 +71,7 @@
           resolved=true;
           workers.forEach(worker=>worker.terminate());
           if(best)resolve(best);
-          else reject(new Error('60초 실전 최적화 제한 시간 안에 실행 가능한 해를 찾지 못했습니다.'));
+          else reject(new Error('30초 실전 최적화 제한 시간 안에 실행 가능한 해를 찾지 못했습니다.'));
         },Math.max(1,deadline-Date.now()));
 
         const finishOne=()=>{
