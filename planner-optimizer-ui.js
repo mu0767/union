@@ -50,7 +50,7 @@
     });
     const snapshot=JSON.stringify({...state,plan:null});
     const started=Date.now();
-    let phase='5분 전역 최적화 준비 중…';
+    let phase='60초 실전 최적화 준비 중…';
     const updateStatus=()=>{$('planner-status').textContent=`[${Math.floor((Date.now()-started)/1000)}초] ${phase}`;};
     updateStatus();
     const ticker=setInterval(updateStatus,1000);
@@ -69,8 +69,8 @@
           resolved=true;
           workers.forEach(worker=>worker.terminate());
           if(best)resolve(best);
-          else reject(new Error('5분 전역 최적화 제한 시간 안에 실행 가능한 해를 찾지 못했습니다.'));
-        },325000);
+          else reject(new Error('60초 실전 최적화 제한 시간 안에 실행 가능한 해를 찾지 못했습니다.'));
+        },75000);
 
         const finishOne=()=>{
           finished++;
@@ -105,7 +105,7 @@
           worker.onerror=()=>{failed++;finishOne();};
           const input=JSON.parse(snapshot);
           input.__solverSeed=index+1;
-          input.__solverMaxSeconds=300;
+          input.__solverMaxSeconds=60;
           input.__levelAttackPower=window.LEVEL_ATTACK_POWER||{};
           worker.postMessage(input);
         }
