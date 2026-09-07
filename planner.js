@@ -577,11 +577,11 @@ if(new URLSearchParams(location.search).get('calculate')==='1'){history.replaceS
 (async function showBuild(){
   const badge=$('build-badge');if(!badge)return;
   try{
-    const response=await fetch('https://api.github.com/repos/mu0767/union/commits/main',{cache:'no-store'});
+    const response=await fetch(`./build.txt?t=${Date.now()}`,{cache:'no-store'});
     if(!response.ok)throw new Error();
-    const commit=await response.json(),sha=String(commit.sha||'').slice(0,7);
-    if(!sha)throw new Error();
+    const full=(await response.text()).trim(),sha=full.slice(0,7);
+    if(!/^[0-9a-f]{7,40}$/i.test(full))throw new Error();
     badge.textContent=`build ${sha}`;
-    badge.href=`https://github.com/mu0767/union/commit/${commit.sha}`;
+    badge.href=`https://github.com/mu0767/union/commit/${full}`;
   }catch{badge.textContent='build ?';}
 })();
