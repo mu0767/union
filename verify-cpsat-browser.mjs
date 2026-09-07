@@ -30,6 +30,13 @@ try {
   const plan = await page.evaluate(() => state.plan);
   assert(plan?.attacks.length > 0, status);
   const seed=await page.evaluate(()=>state);
+  const expectedTarget=seed.bosses.filter(b=>b.round===plan.summary.reachedRound).reduce((sum,b)=>{
+    const actual=seed.results.filter(r=>r.bossId===b.id).reduce((s,r)=>s+r.damage,0);
+    const planned=plan.attacks.filter(a=>a.bossId===b.id).reduce((s,a)=>s+a.damage,0);
+    return sum+Math.min(b.hp==='infinite'?Infinity:Math.max(0,b.hp-actual),planned);
+  },0);
+  assert.equal(plan.summary.targetDamage,expectedTarget,'report effective damage only in the last reached round');
+  assert((await page.locator('#plan-summary').innerText()).includes(plan.summary.reachedFinal?'최종보스 딜':`R${plan.summary.reachedRound} 유효 딜`));
   assert.equal(plan.summary.attackCount,seed.users.filter(u=>u.active).reduce((s,u)=>s+u.attacksLeft,0),'default raid should spend all tickets');
   for(const user of seed.users){
     const attacks=plan.attacks.filter(a=>a.userId===user.id);

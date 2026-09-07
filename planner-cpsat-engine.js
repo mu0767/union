@@ -62,13 +62,11 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   model.add(clear[1].minus(clear[0]).le(0));
   model.add(clear[2].minus(clear[1]).le(0));
 
-  const bossDamageExpr=new Map();
+  const effectiveByBoss=new Map();
   const overVars=[];
-  const effectiveVars=[];
   for(const boss of normal){
     const vars=candidates.filter(c=>c.boss.id===boss.id);
     const expr=sum(vars.map(c=>c.x.times(c.damage)));
-    bossDamageExpr.set(boss.id,expr);
     const idx=boss.round-1;
     const remaining=Math.max(0,boss.hp-(actual.get(boss.id)||0));
     model.add(expr.ge(clear[idx].times(remaining===0?0:Math.max(1,remaining-tolerance))));
@@ -78,7 +76,7 @@ export async function solveRaidCpSat(state, progress = () => {}) {
     overVars.push(over);
     const effective=model.newIntVar(0,remaining,'effective_'+boss.id);
     model.add(effective.le(expr));
-    effectiveVars.push(effective);
+    effectiveByBoss.set(boss.id,effective);
   }
 
   for(const c of candidates){
@@ -123,14 +121,21 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   const bestStage=Math.round(result.value(clear[0])+result.value(clear[1])+result.value(clear[2]));
   model.add(stageExpr.equals(bestStage));hintFrom(result);
 
-  result=optimize('2/4 허용 오차 밖 오버딜 최소화 중…',15,overExpr,'min',result);
+  // AGENTS.md: progress, then damage to the final/last reachable round.
+  // Early overkill must never block a stronger attack on that target.
+  const targetRound=bestStage+1;
+  const targetVars=normal.filter(b=>b.round===targetRound).map(b=>effectiveByBoss.get(b.id));
+  const targetExpr=targetRound===4?finalExpr:sum(targetVars);
+  const targetValue=result=>Math.round(targetRound===4
+    ?candidates.filter(c=>c.boss.round===4).reduce((s,c)=>s+c.damage*result.value(c.x),0)
+    :targetVars.reduce((s,v)=>s+result.value(v),0));
+  result=optimize(targetRound===4?'2/4 최종보스 딜 최대화 중…':`2/4 마지막 도달 R${targetRound} 유효 딜 최대화 중…`,15,targetExpr,'max',result);
+  const bestTarget=targetValue(result);
+  model.add(targetExpr.ge(bestTarget));hintFrom(result);
+
+  result=optimize('3/4 목표 딜 유지 · 오버딜 감소 중…',8,overExpr,'min',result);
   const bestOver=Math.round(overVars.reduce((s,v)=>s+result.value(v),0));
   model.add(overExpr.le(bestOver));hintFrom(result);
-
-  const productiveExpr=sum(effectiveVars).plus(finalExpr);
-  result=optimize('3/4 유효 딜·최종보스 딜 최대화 중…',8,productiveExpr,'max',result);
-  const bestProductive=Math.round(effectiveVars.reduce((s,v)=>s+result.value(v),0)+candidates.filter(c=>c.boss.round===4).reduce((s,c)=>s+c.damage*result.value(c.x),0));
-  model.add(productiveExpr.ge(bestProductive));hintFrom(result);
   // Reserve compatible parties for spare tickets while choosing the core.
   // Otherwise a core party can consume characters needed by two spare parties.
   const reserves=[];
@@ -149,7 +154,7 @@ export async function solveRaidCpSat(state, progress = () => {}) {
 
   progress('최선 계획 정리 중…');
   const chosen=candidates.filter(c=>result.value(c.x)>0.5);
-  // Preserve the low-overkill core, then spend spare tickets on the remaining
+  // Preserve the target-damage core, then spend spare tickets on the remaining
   // round. Spare attacks must not be forced into already cleared bosses.
   const plannedDamage=new Map(actual),plannedCounts=new Map();
   const plannedUsed=new Map([...used].map(([id,names])=>[id,new Set(names)]));
@@ -202,6 +207,11 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   });
 
   const finalDamage=chosen.filter(c=>c.boss.round===4).reduce((s,c)=>s+c.damage,0);
+  const targetDamage=reachedStage===3?finalDamage:normal.filter(b=>b.round===reachedStage+1).reduce((total,b)=>{
+    const hp=Math.max(0,b.hp-(actual.get(b.id)||0));
+    const damage=chosen.filter(c=>c.boss.id===b.id).reduce((s,c)=>s+c.damage,0);
+    return total+Math.min(hp,damage);
+  },0);
   return {
     status:allOptimal&&!extraAttacks?'OPTIMAL':'FEASIBLE',
     summary:{
@@ -211,6 +221,8 @@ export async function solveRaidCpSat(state, progress = () => {}) {
       totalOverkill:attacks.reduce((s,a)=>s+a.overkill,0),
       damageTolerance:tolerance,
       unusedAttacks:users.reduce((s,u)=>s+u.attacksLeft,0)-attacks.length,
+      targetRound:reachedStage+1,
+      targetDamage,
       finalDamage
     },
     attacks,
