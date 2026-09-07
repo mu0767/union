@@ -375,8 +375,23 @@ async function solveRaid(state, progress = () => {}) {
     return true;
   }
 
+  function bossUrgency(round,boss){
+    const need=boss.round===4?0:Math.max(0,boss.hp-(damage.get(boss.id)||0));
+    if(!need)return -Infinity;
+    let possible=0;
+    for(const user of users){
+      const slots=Math.max(0,user.attacksLeft-(attackCounts.get(user.id)||0));
+      if(!slots)continue;
+      possible+=maxDamageForBoss(user,boss,chars.get(user.id)||new Set(),slots);
+    }
+    // Higher means more urgent: little remaining capacity relative to HP needed.
+    return need/Math.max(1,possible);
+  }
+
   while(selected.length<attackLimit) {
     const round=[1,2,3].find(r=>normal.some(b=>b.round===r&&(damage.get(b.id)||0)<b.hp))||4;
+    const urgentBosses=round===4?[]:normal.filter(b=>b.round===round&&(damage.get(b.id)||0)<b.hp).sort((a,b)=>bossUrgency(round,b)-bossUrgency(round,a));
+    const urgentBossId=urgentBosses[0]?.id||null;
     let pick=null;
     for(const c of candidates) {
       const already=attackCounts.get(c.user.id)||0;
@@ -396,17 +411,19 @@ async function solveRaid(state, progress = () => {}) {
       // First preserve the user's remaining attack rights. Then prefer immediate kills
       // with low overkill; otherwise maximize useful damage.
       const keepsRoundClearable=canStillClearRound(round,c);
+      const urgentPenalty=c.boss.round===4?0:(c.boss.id===urgentBossId?0:1);
       const rank=c.boss.round===4
-        ? [blocksAttack?1:0,0,0,-c.damage]
+        ? [blocksAttack?1:0,0,0,0,-c.damage]
         : kills
-          ? [keepsRoundClearable?0:1,blocksAttack?1:0,0,over]
-          : [keepsRoundClearable?0:1,blocksAttack?1:0,1,-effective];
+          ? [keepsRoundClearable?0:1,urgentPenalty,blocksAttack?1:0,0,over]
+          : [keepsRoundClearable?0:1,urgentPenalty,blocksAttack?1:0,1,-effective];
 
       const better=!pick||minute<pick.minute||minute===pick.minute&&(
         rank[0]<pick.rank[0]||
         rank[0]===pick.rank[0]&&rank[1]<pick.rank[1]||
         rank[0]===pick.rank[0]&&rank[1]===pick.rank[1]&&rank[2]<pick.rank[2]||
-        rank[0]===pick.rank[0]&&rank[1]===pick.rank[1]&&rank[2]===pick.rank[2]&&rank[3]<pick.rank[3]
+        rank[0]===pick.rank[0]&&rank[1]===pick.rank[1]&&rank[2]===pick.rank[2]&&rank[3]<pick.rank[3]||
+        rank[0]===pick.rank[0]&&rank[1]===pick.rank[1]&&rank[2]===pick.rank[2]&&rank[3]===pick.rank[3]&&rank[4]<pick.rank[4]
       );
       if(better)pick={...c,minute,rank};
     }
