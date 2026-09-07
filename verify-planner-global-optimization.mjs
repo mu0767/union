@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { solveRaidHybrid } from './planner-hybrid-engine-v2.js';
+import { solveRaidHybrid } from './planner-hybrid-engine-v3.js';
 
 const elements=['철갑','수냉','작열','풍압','전격'];
 const party=(id,element,damage,nikkes)=>({id,name:id,element,normalDamage:damage,finalDamage:damage,nikkes});
@@ -58,4 +58,21 @@ const done=(list,except=[])=>list.filter(b=>b.round!==4&&!except.includes(b.id))
   assert(plan.attacks.some(a=>a.partyId==='p216'&&a.round===2),'216 should be preserved for R2');
   assert(!plan.attacks.some(a=>a.partyId==='p216'&&a.round===1),'obvious 216/200 reverse assignment must be removed');
   console.log('PASS: obvious cross-round 216/200 swap');
+}
+
+// A single well-fitting attack must beat two attacks that create more waste.
+{
+  const bs=bosses();
+  bs.find(b=>b.id==='1-철갑').hp=200;
+  const open=['1-철갑',...bs.filter(b=>b.round>=2&&b.round<=3).map(b=>b.id)];
+  const results=done(bs,open);
+  const users=[
+    {id:'one',name:'one',active:true,attacksLeft:1,parties:[party('p205','철갑',205,['a1','a2','a3','a4','a5'])]},
+    {id:'twoa',name:'twoa',active:true,attacksLeft:1,parties:[party('p120','철갑',120,['b1','b2','b3','b4','b5'])]},
+    {id:'twob',name:'twob',active:true,attacksLeft:1,parties:[party('p100','철갑',100,['c1','c2','c3','c4','c5'])]}
+  ];
+  const plan=await solveRaidHybrid({users,bosses:bs,results,locks:[],settings:{startAt:'2026-09-07T05:00',damageTolerance:0},__solverMaxSeconds:8,__solverSeed:4});
+  const r1=plan.attacks.filter(a=>a.bossId==='1-철갑');
+  assert.deepEqual(r1.map(a=>a.partyId),['p205']);
+  console.log('PASS: 2:1 neighborhood cleanup prefers one fitting attack');
 }
