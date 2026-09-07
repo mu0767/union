@@ -316,6 +316,48 @@ async function solveRaid(state, progress = () => {}) {
     return best;
   }
 
+  function maxDamageForBoss(user,boss,usedSet,slots){
+    if(slots<=0)return 0;
+    const pool=[...new Map(candidates.filter(c=>c.user.id===user.id&&c.boss.id===boss.id&&c.damage).map(c=>[c.party.id,c])).values()];
+    let best=0;
+    function dfs(index,usedNow,left,total){
+      if(total>best)best=total;
+      if(left<=0)return;
+      for(let i=index;i<pool.length;i++){
+        const c=pool[i];
+        if(c.party.nikkes.some(n=>usedNow.has(n)))continue;
+        const next=new Set(usedNow);c.party.nikkes.forEach(n=>next.add(n));
+        dfs(i+1,next,left-1,total+c.damage);
+      }
+    }
+    dfs(0,new Set(usedSet),slots,0);
+    return best;
+  }
+
+  function canStillClearRound(round,trial){
+    if(round===4)return true;
+    const trialDamage=new Map(damage),trialChars=new Map([...chars].map(([id,set])=>[id,new Set(set)])),trialCounts=new Map(attackCounts);
+    if(trial){
+      add(trialDamage,trial.boss.id,trial.damage);
+      add(trialCounts,trial.user.id,1);
+      if(!trialChars.has(trial.user.id))trialChars.set(trial.user.id,new Set());
+      trial.party.nikkes.forEach(n=>trialChars.get(trial.user.id).add(n));
+    }
+    for(const boss of normal.filter(b=>b.round===round)){
+      const need=Math.max(0,boss.hp-(trialDamage.get(boss.id)||0));
+      if(!need)continue;
+      let possible=0;
+      for(const user of users){
+        const slots=Math.max(0,user.attacksLeft-(trialCounts.get(user.id)||0));
+        if(!slots)continue;
+        possible+=maxDamageForBoss(user,boss,trialChars.get(user.id)||new Set(),slots);
+        if(possible>=need)break;
+      }
+      if(possible<need)return false;
+    }
+    return true;
+  }
+
   while(selected.length<attackLimit) {
     const round=[1,2,3].find(r=>normal.some(b=>b.round===r&&(damage.get(b.id)||0)<b.hp))||4;
     let pick=null;
@@ -336,16 +378,18 @@ async function solveRaid(state, progress = () => {}) {
 
       // First preserve the user's remaining attack rights. Then prefer immediate kills
       // with low overkill; otherwise maximize useful damage.
+      const keepsRoundClearable=canStillClearRound(round,c);
       const rank=c.boss.round===4
-        ? [blocksAttack?1:0,0,-c.damage]
+        ? [blocksAttack?1:0,0,0,-c.damage]
         : kills
-          ? [blocksAttack?1:0,0,over]
-          : [blocksAttack?1:0,1,-effective];
+          ? [keepsRoundClearable?0:1,blocksAttack?1:0,0,over]
+          : [keepsRoundClearable?0:1,blocksAttack?1:0,1,-effective];
 
       const better=!pick||minute<pick.minute||minute===pick.minute&&(
         rank[0]<pick.rank[0]||
         rank[0]===pick.rank[0]&&rank[1]<pick.rank[1]||
-        rank[0]===pick.rank[0]&&rank[1]===pick.rank[1]&&rank[2]<pick.rank[2]
+        rank[0]===pick.rank[0]&&rank[1]===pick.rank[1]&&rank[2]<pick.rank[2]||
+        rank[0]===pick.rank[0]&&rank[1]===pick.rank[1]&&rank[2]===pick.rank[2]&&rank[3]<pick.rank[3]
       );
       if(better)pick={...c,minute,rank};
     }
