@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
-import { solveRaidHybrid } from './planner-hybrid-engine.js';
+import { solveRaidHybrid } from './planner-hybrid-engine-v2.js';
 
 const elements=['철갑','수냉','작열','풍압','전격'];
 const party=(id,element,damage,nikkes)=>({id,name:id,element,normalDamage:damage,finalDamage:damage,nikkes});
 const bosses=()=>[1,2,3].flatMap(round=>elements.map(element=>({id:`${round}-${element}`,name:element,round,element,hp:100}))).concat({id:'final',name:'Final',round:4,element:'풍압',hp:'infinite'});
 const done=(list,except=[])=>list.filter(b=>b.round!==4&&!except.includes(b.id)).map(b=>({userId:'done',bossId:b.id,damage:b.hp,nikkes:[]}));
 
-// Global swap regression: shared Anis belongs on water when another user can cover fire.
 {
   const bs=bosses();
   const open=['1-수냉','1-작열',...bs.filter(b=>b.round>=2&&b.round<=3).map(b=>b.id)];
@@ -26,7 +25,6 @@ const done=(list,except=[])=>list.filter(b=>b.round!==4&&!except.includes(b.id))
   console.log('PASS: global cross-element swap');
 }
 
-// Tolerance/waste regression: 15.991B clears inside the 1B gap; 20.304B is needless overkill.
 {
   const bs=[1,2,3].flatMap(round=>elements.map(element=>({id:`${round}-${element}`,name:element,round,element,hp:round===1&&element==='작열'?150_841_813_600:100}))).concat({id:'final',name:'Final',round:4,element:'풍압',hp:'infinite'});
   const results=done(bs,['1-작열']);
@@ -44,8 +42,6 @@ const done=(list,except=[])=>list.filter(b=>b.round!==4&&!except.includes(b.id))
   console.log('PASS: tolerance threshold prefers low-waste clear');
 }
 
-// Obvious round swap regression. If R1 needs 196 and R2 needs 200, 200 belongs in R1
-// and 216 belongs in R2. Returning the reverse assignment is a planner bug.
 {
   const bs=bosses();
   bs.find(b=>b.id==='1-철갑').hp=196;
