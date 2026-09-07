@@ -17,6 +17,8 @@
 .multiplier-toggle{margin:0 26px 18px;padding:9px 14px;color:#d9dfff;background:#303957}.damage-multipliers{margin:0 26px 22px;padding:15px;border:1px solid var(--line);border-radius:10px;background:#151a24;align-items:end;gap:12px}.damage-multipliers:not([hidden]){display:flex}.damage-multipliers>div{display:flex;flex:1;gap:10px;flex-wrap:wrap}.damage-multipliers label{font-size:11px;color:var(--muted)}.damage-multipliers input{display:block;width:104px;margin-top:6px}.damage-multipliers button{padding:10px 14px}@media(max-width:650px){.damage-multipliers:not([hidden]){display:block}.damage-multipliers>div{margin-bottom:12px}.multiplier-toggle{margin-left:20px}.damage-multipliers{margin-left:20px;margin-right:20px}}
 .fixed-infinite{display:block;margin-top:7px;color:var(--accent);font-size:17px}
 .squad-trigger{display:block;width:100%;padding:0;border:0;border-radius:4px;background:transparent;text-align:right;color:#cad1e0}.squad-trigger:hover{color:var(--accent);background:#252c40}.squad-character-list{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.squad-character-list article{text-align:center;min-width:0}.squad-character-list img,.portrait-placeholder{display:grid;place-items:center;width:100%;aspect-ratio:10/13;object-fit:cover;border:1px solid var(--line);border-radius:8px;background:#293044}.squad-character-list strong{display:block;margin-top:8px;font-size:12px;line-height:1.45;overflow-wrap:anywhere}.portrait-placeholder{color:var(--muted);font-size:20px}.squad-note{color:var(--muted);margin:16px 0 0}@media(max-width:600px){.squad-character-list{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.boss-save-error { color: #ff9b9b; display: block; grid-column: 1 / -1; }
+.boss-save-error[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -26,7 +28,6 @@
     <p id="message" role="status" hidden></p>
     <nav class="tabs page-tabs" aria-label="페이지 선택"><button data-page="records" class="active" aria-pressed="true" aria-controls="round-records">딜량 기록</button><button data-page="bosses" aria-pressed="false" aria-controls="boss-panel">보스 정보</button><a href="planner.html">레이드 운영</a></nav>
     <section id="boss-panel" class="raid-bosses" aria-label="단계별 보스 정보" hidden>
-      <div class="server-controls"><button id="save-bosses" type="button">보스 정보 저장</button><button id="reload-bosses" type="button">최신 정보 불러오기</button><button id="discard-bosses" type="button">현재 단계 입력 취소</button><p id="server-status" role="status">보스 정보 연결 중…</p></div>
       <div class="tabs" role="group" aria-label="레이드 단계 선택"><button data-round="1" class="active" aria-pressed="true">1단계</button><button data-round="2" aria-pressed="false">2단계</button><button data-round="3" aria-pressed="false">3단계</button><button data-round="4" aria-pressed="false">4단계</button></div>
       <div id="boss-list" class="boss-list" aria-live="polite"></div>
     </section>
@@ -179,7 +180,7 @@ window.NIKKE_CHARACTERS = [
 <script>
 // Static hosting only: paste the deployed Apps Script /exec URL here.
 // Apps Script hosted Index uses google.script.run and needs no URL.
-window.UNION_SHARED_URL = '';
+window.UNION_SHARED_URL = '/api/shared-bosses';
 
 </script>
 <script>
@@ -198,13 +199,13 @@ window.BossRepository = (() => {
           .withSuccessHandler(resolve).withFailureHandler(reject).bossApi(changes ? {action, changes} : {action}));
       } else {
         const endpoint = window.UNION_SHARED_URL;
-        if (!endpoint) throw new Error('shared-config.js에 Apps Script 배포 URL을 설정해 주세요');
+        if (!endpoint) throw new Error('공유 저장소 주소가 없습니다.');
         const response = await fetch(action === 'save' ? endpoint : `${endpoint}?action=${action}&t=${Date.now()}`, {
           method:action === 'save' ? 'POST' : 'GET', redirect:'follow', cache:'no-store',
           ...(action === 'save' ? {headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({action, changes})} : {})
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
       }
       if (result.error) throw new Error(result.error);
       return result;
@@ -315,6 +316,25 @@ let loadingBoss = false;
 let remoteVersion = null;
 let pollFailures = 0;
 const bossDrafts = new Map();
+let autoSaveTimer;
+function scheduleBossSave(delay = 800) {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(saveBossDrafts, delay);
+}
+function showBossSaveError(message = '') {
+  $('boss-list').querySelectorAll('[data-boss]').forEach(card => {
+    let error = card.querySelector('.boss-save-error');
+    if (!error) {
+      error = document.createElement('small');
+      error.className = 'boss-save-error';
+      error.setAttribute('role', 'status');
+      card.append(error);
+    }
+    const pending = [...bossDrafts.values()].some(d => d.round === selectedRound && d.index === Number(card.dataset.boss));
+    error.textContent = pending ? message : '';
+    error.hidden = !error.textContent;
+  });
+}
 const focusedBossValues = new WeakMap();
 const wireHp = hp => hp === Infinity ? 'infinite' : hp;
 function patchBossViews() {
@@ -370,10 +390,8 @@ async function loadSharedBosses(manual = false) {
     if (version !== remoteVersion) applyServerStore(await window.BossRepository.load());
     serverReady = true;
     pollFailures = 0;
-    if (manual || !bossDirty) $('server-status').textContent = bossDirty ? '최신 정보 반영 · 작성 중인 입력은 유지됩니다.' : '공유 연결됨 · 변경사항 자동 반영 중';
   } catch (error) {
     pollFailures++;
-    $('server-status').textContent = `공유 연결 실패: ${error.message} · 입력을 유지하며 재연결합니다.`;
   } finally { loadingBoss = false; }
 }
 function renderRound(round) {
@@ -396,9 +414,10 @@ function rememberBossInput(event) {
   const index = Number(card.dataset.boss);
   const key = `${selectedRound}:${index}:${field}`;
   const previous = bossDrafts.get(key);
-  bossDrafts.set(key, {round:selectedRound, index, field, before:previous ? previous.before : focusedBossValues.has(event.target) ? focusedBossValues.get(event.target) : wireHp(raidRounds[selectedRound][index][field]), text:event.target.value});
+  bossDrafts.set(key, {round:selectedRound, index, field, before:previous?.conflict ? wireHp(raidRounds[selectedRound][index][field]) : previous ? previous.before : focusedBossValues.has(event.target) ? focusedBossValues.get(event.target) : wireHp(raidRounds[selectedRound][index][field]), text:event.target.value});
   bossDirty = true;
-  $('server-status').textContent = '변경 내용을 저장해 주세요.';
+  showBossSaveError();
+  scheduleBossSave();
 }
 $('boss-list').addEventListener('input', rememberBossInput);
 $('boss-list').addEventListener('change', rememberBossInput);
@@ -408,26 +427,25 @@ $('boss-list').addEventListener('focusin', event => {
   if (field && card) focusedBossValues.set(event.target, wireHp(raidRounds[selectedRound][Number(card.dataset.boss)][field]));
 });
 $('boss-list').addEventListener('focusout', () => setTimeout(patchBossViews, 0));
-$('save-bosses').addEventListener('click', async () => {
-  if (savingBoss) return;
-  if (loadingBoss) { $('server-status').textContent = '최신 정보 확인 중입니다. 잠시 후 저장해 주세요.'; return; }
-  if (!serverReady) { $('server-status').textContent = '공유 연결 후 저장할 수 있습니다.'; return; }
-  const submitted = [...bossDrafts.entries()].filter(([,d]) => d.round === selectedRound);
+async function saveBossDrafts() {
+  if (!bossDrafts.size) return;
+  if (savingBoss || loadingBoss) { scheduleBossSave(); return; }
+  if (!serverReady) { showBossSaveError('아직 저장되지 않았습니다. 연결되면 자동 저장합니다.'); scheduleBossSave(5000); return; }
+  const submitted = [...bossDrafts.entries()].filter(([,draft]) => !draft.conflict);
+  if (!submitted.length) return;
   const changes = [];
   for (const [, draft] of submitted) {
     const value = draft.field === 'hp' ? Number(draft.text.replace(/,/g, '')) : draft.text.trim();
     if ((draft.field === 'hp' && (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(draft.text.trim()) || !Number.isSafeInteger(value) || value <= 0)) || (draft.field === 'name' && (!value || value.length > 80))) {
-      $('server-status').textContent = '이름과 0보다 큰 정수 체력을 입력해 주세요.'; return;
+      showBossSaveError('이름과 0보다 큰 정수 체력을 입력해 주세요.'); return;
     }
     if (value !== draft.before) changes.push({round:draft.round, index:draft.index, field:draft.field, before:draft.before, value});
   }
   if (!changes.length) {
     submitted.forEach(([key]) => bossDrafts.delete(key)); bossDirty = bossDrafts.size > 0; patchBossViews();
-    $('server-status').textContent = '저장할 변경사항이 없습니다.'; return;
+    showBossSaveError(); return;
   }
   savingBoss = true;
-  $('save-bosses').disabled = true;
-  $('server-status').textContent = '공유 저장 중…';
   try {
     const store = await window.BossRepository.save(changes);
     submitted.forEach(([key, draft]) => {
@@ -441,19 +459,15 @@ $('save-bosses').addEventListener('click', async () => {
     });
     bossDirty = bossDrafts.size > 0;
     applyServerStore(store);
-    $('server-status').textContent = bossDirty ? '저장 완료 · 추가 입력은 아직 저장되지 않았습니다.' : '공유 저장 완료';
+    showBossSaveError();
+    if (bossDirty) scheduleBossSave();
   } catch (error) {
-    $('server-status').textContent = `저장 실패: ${error.message} · 입력은 유지됩니다.`;
-  } finally { savingBoss = false; $('save-bosses').disabled = false; }
-});
-$('reload-bosses').addEventListener('click', () => loadSharedBosses(true));
-$('discard-bosses').addEventListener('click', () => {
-  if (savingBoss) return;
-  for (const [key, draft] of bossDrafts) if (draft.round === selectedRound) bossDrafts.delete(key);
-  bossDirty = bossDrafts.size > 0;
-  patchBossViews();
-  loadSharedBosses(true);
-});
+    const conflict = error.message.includes('다른 사용자가');
+    showBossSaveError(conflict ? '다른 사람이 같은 항목을 수정했습니다. 값을 다시 입력해 주세요.' : '아직 저장되지 않았습니다. 자동으로 다시 시도합니다.');
+    if (conflict) submitted.forEach(([,draft]) => { draft.conflict = true; });
+    else scheduleBossSave(5000);
+  } finally { savingBoss = false; }
+}
 function selectPage(page) {
   const isRecords = page === 'records';
   $('round-records').hidden = !isRecords;

@@ -39,14 +39,16 @@ async function verify() {
   check(input===$('boss-list').querySelector('input') && input.value==='Draft' && document.activeElement===input,'focused draft and DOM preserved');
   check(row===$('table-body').firstElementChild,'table rows preserved');
   check($('boss-list').querySelectorAll('[name="bossName"]')[1].value==='Remote','unrelated field updated');
-  $('save-bosses').click(); await new Promise(r=>setTimeout(r,20));
+  await new Promise(r=>setTimeout(r,900));
   check(mockStore.rounds[1][0].name==='Draft' && mockStore.rounds[1][1].name==='Remote','only edited field saved');
   input.value='unsaved';input.dispatchEvent(new Event('input',{bubbles:true}));
-  failSave=true;$('save-bosses').click();await new Promise(r=>setTimeout(r,20));
-  check(bossDirty && input.value==='unsaved' && $('server-status').textContent.includes('offline'),'failed save retains input');
-  failSave=false;$('save-bosses').click();await new Promise(r=>setTimeout(r,20));
+  failSave=true;await saveBossDrafts();await new Promise(r=>setTimeout(r,20));
+  check(bossDirty && input.value==='unsaved' && $('boss-list').querySelector('.boss-save-error').textContent.length > 0,'failed save retains input');
+  failSave=false;await saveBossDrafts();await new Promise(r=>setTimeout(r,20));
   check(mockStore.rounds[1][0].name==='unsaved' && !bossDirty,'second save and failure retry use updated base');
   check(!overlap,'requests do not overlap');
+  check(!$('save-bosses') && !$('reload-bosses') && !$('discard-bosses') && !$('server-status'),'manual controls and connection banner removed');
+  clearTimeout(autoSaveTimer);
   document.body.innerHTML='<pre id="result">PASS '+results.join('\n')+'</pre>';
  } catch(e) {document.body.innerHTML='<pre id="result">FAIL '+e.stack+'</pre>';}
 }

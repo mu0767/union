@@ -97,6 +97,25 @@ let loadingBoss = false;
 let remoteVersion = null;
 let pollFailures = 0;
 const bossDrafts = new Map();
+let autoSaveTimer;
+function scheduleBossSave(delay = 800) {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(saveBossDrafts, delay);
+}
+function showBossSaveError(message = '') {
+  $('boss-list').querySelectorAll('[data-boss]').forEach(card => {
+    let error = card.querySelector('.boss-save-error');
+    if (!error) {
+      error = document.createElement('small');
+      error.className = 'boss-save-error';
+      error.setAttribute('role', 'status');
+      card.append(error);
+    }
+    const pending = [...bossDrafts.values()].some(d => d.round === selectedRound && d.index === Number(card.dataset.boss));
+    error.textContent = pending ? message : '';
+    error.hidden = !error.textContent;
+  });
+}
 const focusedBossValues = new WeakMap();
 const wireHp = hp => hp === Infinity ? 'infinite' : hp;
 function patchBossViews() {
@@ -152,10 +171,8 @@ async function loadSharedBosses(manual = false) {
     if (version !== remoteVersion) applyServerStore(await window.BossRepository.load());
     serverReady = true;
     pollFailures = 0;
-    if (manual || !bossDirty) $('server-status').textContent = bossDirty ? '최신 정보 반영 · 작성 중인 입력은 유지됩니다.' : '공유 연결됨 · 변경사항 자동 반영 중';
   } catch (error) {
     pollFailures++;
-    $('server-status').textContent = `공유 연결 실패: ${error.message} · 입력을 유지하며 재연결합니다.`;
   } finally { loadingBoss = false; }
 }
 function renderRound(round) {
@@ -178,9 +195,10 @@ function rememberBossInput(event) {
   const index = Number(card.dataset.boss);
   const key = `${selectedRound}:${index}:${field}`;
   const previous = bossDrafts.get(key);
-  bossDrafts.set(key, {round:selectedRound, index, field, before:previous ? previous.before : focusedBossValues.has(event.target) ? focusedBossValues.get(event.target) : wireHp(raidRounds[selectedRound][index][field]), text:event.target.value});
+  bossDrafts.set(key, {round:selectedRound, index, field, before:previous?.conflict ? wireHp(raidRounds[selectedRound][index][field]) : previous ? previous.before : focusedBossValues.has(event.target) ? focusedBossValues.get(event.target) : wireHp(raidRounds[selectedRound][index][field]), text:event.target.value});
   bossDirty = true;
-  $('server-status').textContent = '변경 내용을 저장해 주세요.';
+  showBossSaveError();
+  scheduleBossSave();
 }
 $('boss-list').addEventListener('input', rememberBossInput);
 $('boss-list').addEventListener('change', rememberBossInput);
@@ -190,26 +208,25 @@ $('boss-list').addEventListener('focusin', event => {
   if (field && card) focusedBossValues.set(event.target, wireHp(raidRounds[selectedRound][Number(card.dataset.boss)][field]));
 });
 $('boss-list').addEventListener('focusout', () => setTimeout(patchBossViews, 0));
-$('save-bosses').addEventListener('click', async () => {
-  if (savingBoss) return;
-  if (loadingBoss) { $('server-status').textContent = '최신 정보 확인 중입니다. 잠시 후 저장해 주세요.'; return; }
-  if (!serverReady) { $('server-status').textContent = '공유 연결 후 저장할 수 있습니다.'; return; }
-  const submitted = [...bossDrafts.entries()].filter(([,d]) => d.round === selectedRound);
+async function saveBossDrafts() {
+  if (!bossDrafts.size) return;
+  if (savingBoss || loadingBoss) { scheduleBossSave(); return; }
+  if (!serverReady) { showBossSaveError('아직 저장되지 않았습니다. 연결되면 자동 저장합니다.'); scheduleBossSave(5000); return; }
+  const submitted = [...bossDrafts.entries()].filter(([,draft]) => !draft.conflict);
+  if (!submitted.length) return;
   const changes = [];
   for (const [, draft] of submitted) {
     const value = draft.field === 'hp' ? Number(draft.text.replace(/,/g, '')) : draft.text.trim();
     if ((draft.field === 'hp' && (!/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(draft.text.trim()) || !Number.isSafeInteger(value) || value <= 0)) || (draft.field === 'name' && (!value || value.length > 80))) {
-      $('server-status').textContent = '이름과 0보다 큰 정수 체력을 입력해 주세요.'; return;
+      showBossSaveError('이름과 0보다 큰 정수 체력을 입력해 주세요.'); return;
     }
     if (value !== draft.before) changes.push({round:draft.round, index:draft.index, field:draft.field, before:draft.before, value});
   }
   if (!changes.length) {
     submitted.forEach(([key]) => bossDrafts.delete(key)); bossDirty = bossDrafts.size > 0; patchBossViews();
-    $('server-status').textContent = '저장할 변경사항이 없습니다.'; return;
+    showBossSaveError(); return;
   }
   savingBoss = true;
-  $('save-bosses').disabled = true;
-  $('server-status').textContent = '공유 저장 중…';
   try {
     const store = await window.BossRepository.save(changes);
     submitted.forEach(([key, draft]) => {
@@ -223,19 +240,15 @@ $('save-bosses').addEventListener('click', async () => {
     });
     bossDirty = bossDrafts.size > 0;
     applyServerStore(store);
-    $('server-status').textContent = bossDirty ? '저장 완료 · 추가 입력은 아직 저장되지 않았습니다.' : '공유 저장 완료';
+    showBossSaveError();
+    if (bossDirty) scheduleBossSave();
   } catch (error) {
-    $('server-status').textContent = `저장 실패: ${error.message} · 입력은 유지됩니다.`;
-  } finally { savingBoss = false; $('save-bosses').disabled = false; }
-});
-$('reload-bosses').addEventListener('click', () => loadSharedBosses(true));
-$('discard-bosses').addEventListener('click', () => {
-  if (savingBoss) return;
-  for (const [key, draft] of bossDrafts) if (draft.round === selectedRound) bossDrafts.delete(key);
-  bossDirty = bossDrafts.size > 0;
-  patchBossViews();
-  loadSharedBosses(true);
-});
+    const conflict = error.message.includes('다른 사용자가');
+    showBossSaveError(conflict ? '다른 사람이 같은 항목을 수정했습니다. 값을 다시 입력해 주세요.' : '아직 저장되지 않았습니다. 자동으로 다시 시도합니다.');
+    if (conflict) submitted.forEach(([,draft]) => { draft.conflict = true; });
+    else scheduleBossSave(5000);
+  } finally { savingBoss = false; }
+}
 function selectPage(page) {
   const isRecords = page === 'records';
   $('round-records').hidden = !isRecords;
