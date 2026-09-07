@@ -25,6 +25,20 @@
     return statusRank(candidate)>statusRank(current);
   };
 
+  const renderProof=plan=>{
+    const holder=$('plan-summary');
+    if(!holder||!plan)return;
+    const old=holder.querySelector('[data-optimizer-proof]');
+    if(old)old.remove();
+    const card=document.createElement('div');
+    card.className='summary-card';
+    card.dataset.optimizerProof='true';
+    const o=plan.summary?.optimization||{};
+    const proof=plan.status==='OPTIMAL'?'최적해 증명 완료':'최적성 미증명';
+    card.innerHTML=`<small>최적화 상태</small><strong>${proof}</strong><small>도달 ${o.stage||'-'} · 목표딜 ${o.target||'-'} · 낭비 ${o.waste||'-'}</small>`;
+    holder.append(card);
+  };
+
   async function calculateDeep(){
     if(calculateButton.disabled)return;
     const buttons=[calculateButton,recalculateButton];
@@ -103,6 +117,7 @@
       }
       state.plan=plan;
       renderSchedule();
+      renderProof(plan);
       renderLive();
       const proof=plan.status==='OPTIMAL'?'최적해 증명 완료':'최선해 · 최적성 미증명';
       const o=plan.summary.optimization||{};
@@ -122,4 +137,5 @@
 
   calculateButton.addEventListener('click',calculateDeep);
   recalculateButton.addEventListener('click',calculateDeep);
+  if(state?.plan)renderProof(state.plan);
 })();
