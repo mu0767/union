@@ -50,6 +50,8 @@
     });
     const snapshot=JSON.stringify({...state,plan:null});
     const started=Date.now();
+    const wallBudgetMs=60000;
+    const deadline=started+wallBudgetMs;
     let phase='60초 실전 최적화 준비 중…';
     const updateStatus=()=>{$('planner-status').textContent=`[${Math.floor((Date.now()-started)/1000)}초] ${phase}`;};
     updateStatus();
@@ -70,7 +72,7 @@
           workers.forEach(worker=>worker.terminate());
           if(best)resolve(best);
           else reject(new Error('60초 실전 최적화 제한 시간 안에 실행 가능한 해를 찾지 못했습니다.'));
-        },75000);
+        },Math.max(1,deadline-Date.now()));
 
         const finishOne=()=>{
           finished++;
@@ -105,7 +107,9 @@
           worker.onerror=()=>{failed++;finishOne();};
           const input=JSON.parse(snapshot);
           input.__solverSeed=index+1;
-          input.__solverMaxSeconds=60;
+          // 60 seconds is a wall-clock budget for the whole calculation, including
+          // WASM/module startup. Never give each worker a fresh 60-second budget.
+          input.__solverMaxSeconds=Math.max(1,Math.floor((deadline-Date.now())/1000));
           input.__levelAttackPower=window.LEVEL_ATTACK_POWER||{};
           worker.postMessage(input);
         }
