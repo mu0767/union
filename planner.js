@@ -217,7 +217,8 @@ function renderPlan(plan,target=$('plan-list')){
   if(target!==$('plan-list')){
     target.innerHTML=plan.map(a=>{
       const idx=state.plan?.attacks?.indexOf(a)??-1;
-      return `<button class="plan-card plan-card-button" data-plan-index="${idx}"><div><small>R${a.round===4?'최종':a.round} · ${escapeHTML(a.element)} · ${a.attackNumber}타</small><p>${escapeHTML(a.userName)} → ${escapeHTML(a.bossName)}</p></div><div><strong>${formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</strong></div></button>`;
+      const attr=a.completed?`data-result-id="${escapeHTML(a.resultId)}"`:`data-plan-index="${idx}"`;
+      return `<button class="plan-card plan-card-button${a.completed?' completed':''}" ${attr}><div><small>R${a.round===4?'최종':a.round} · ${escapeHTML(a.element)} · ${a.attackNumber}타${a.completed?' · 완료':''}</small><p>${escapeHTML(a.userName)} → ${escapeHTML(a.bossName)}</p></div><div><strong>${a.completed?displayNumber(planResultForAttack(a)?.damage??a.damage):formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</strong></div></button>`;
     }).join('');
     return;
   }
@@ -228,7 +229,8 @@ function renderPlan(plan,target=$('plan-list')){
     const idx=state.plan?.attacks?.indexOf(a)??-1;
     const portraits=a.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
     const result=planResultForAttack(a);
-    return `<button class="raid-slot-card${result?' completed':''}" data-plan-index="${idx}">
+    const attr=a.completed?`data-result-id="${escapeHTML(a.resultId)}"`:`data-plan-index="${idx}"`;
+    return `<button class="raid-slot-card${result?' completed':''}" ${attr}>
       <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong>${result?'<span class="raid-slot-done">완료</span>':''}</div>
       <div class="raid-slot-portraits">${portraits}</div>
       <small>${a.attackNumber}타${result?' · 실제 딜':''}</small>
@@ -500,8 +502,21 @@ function openAttackDetail(index){
     <div class="attack-detail-current"><strong>이번 공격</strong><p>${formatPlannerDamage(attack.userId,attack.element,attack.damage,attack.round)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
     <div class="attack-detail-used"><strong>이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
   const result=planResultForAttack(attack);
-  const f=$('attack-actual-form');f.elements.attackIndex.value=String(index);f.elements.damage.value=displayNumber(result?result.damage:attack.damage);
+  const f=$('attack-actual-form');delete f.dataset.resultId;f.elements.attackIndex.value=String(index);f.elements.damage.value=displayNumber(result?result.damage:attack.damage);
   f.querySelector('button').textContent=result?'실제 딜 수정':'실제 결과 저장';
+  $('attack-detail-dialog').showModal();
+}
+function openCompletedAttackDetail(resultId){
+  const result=state.results.find(r=>r.id===resultId);if(!result)return;
+  const attack=completedPlanAttacks().find(a=>a.resultId===resultId);if(!attack)return;
+  const user=state.users.find(u=>u.id===attack.userId);
+  const used=new Set(state.results.filter(r=>r.userId===attack.userId).flatMap(r=>r.nikkes||[]));
+  $('attack-detail-title').textContent=`${attack.userName} · R${attack.round===4?'최종':attack.round} ${attack.bossName}`;
+  $('attack-detail-body').innerHTML=`
+    <div class="attack-detail-current"><strong>완료된 공격</strong><p>예상 ${displayNumber(attack.damage)} · 실제 ${displayNumber(result.damage)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
+    <div class="attack-detail-used"><strong>이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
+  const f=$('attack-actual-form');f.dataset.resultId=resultId;f.elements.attackIndex.value='';f.elements.damage.value=displayNumber(result.damage);
+  f.querySelector('button').textContent='실제 딜 수정';
   $('attack-detail-dialog').showModal();
 }
 async function saveActualFromPlan(index,damage){
@@ -584,9 +599,9 @@ $('reset-plan')?.addEventListener('click',()=>{
   localSave('전체 데이터를 초기화했습니다.');
 });
 $('plan-time-slots')?.addEventListener('change',()=>{renderSchedule();});
-document.addEventListener('click',e=>{const card=e.target.closest('[data-plan-index]');if(card)openAttackDetail(Number(card.dataset.planIndex));});
+document.addEventListener('click',e=>{const resultCard=e.target.closest('[data-result-id]');if(resultCard){openCompletedAttackDetail(resultCard.dataset.resultId);return}const card=e.target.closest('[data-plan-index]');if(card)openAttackDetail(Number(card.dataset.planIndex));});
 $('attack-detail-close')?.addEventListener('click',()=>$('attack-detail-dialog').close());
-$('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜량은 0 이상의 정수여야 합니다.');try{await saveActualFromPlan(Number(f.elements.attackIndex.value),damage);$('attack-detail-dialog').close();}catch(error){alert(error.message);}});
+$('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜량은 0 이상의 정수여야 합니다.');try{if(f.dataset.resultId){const result=state.results.find(r=>r.id===f.dataset.resultId);if(!result)throw new Error('완료 공격을 찾을 수 없습니다.');result.damage=damage;result.at=new Date().toISOString();await saveShared('완료된 공격의 실제 딜을 수정했습니다.');renderAll();}else await saveActualFromPlan(Number(f.elements.attackIndex.value),damage);$('attack-detail-dialog').close();}catch(error){alert(error.message);}});
 let transferredState = null;
 try { if (window.name.startsWith('union-planner-state:')) { transferredState = validateState(JSON.parse(window.name.slice('union-planner-state:'.length))); window.name = ''; } } catch { window.name = ''; }
 try{state=transferredState||validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed())}catch{state=parseUnionRaidSeed()}ensurePlanningSettings();selectedUser=null;renderAll();
