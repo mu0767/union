@@ -478,32 +478,47 @@ async function saveActualFromPlan(index,damage){
 
 async function calculate(){
   if ($('calculate').disabled) return;
-  if(!state.settings.attackMinutes||state.settings.simultaneous==null||state.settings.simultaneous===''){$('planner-status').textContent='계산에 필요한 운영 기본값을 준비하지 못했습니다. 새로고침 후 다시 시도해 주세요.';return}
   const buttons=[$('calculate'),$('recalculate')];
-  buttons.forEach(button=>{button.disabled=true;button.classList.add('is-calculating');button.dataset.label=button.textContent;button.textContent='계산 중…';});
-  $('planner-status').textContent='남은 레이드 전체를 최적화하는 중…';
-  try {
-    const snapshot=JSON.stringify({...state,plan:null});
-    const started=Date.now();
-    let phase='계산기 로딩 중…';
-    const updateStatus=()=>{$('planner-status').textContent=`[${Math.floor((Date.now()-started)/1000)}초] ${phase}`;};
-    updateStatus();
-    const ticker=setInterval(updateStatus,1000);
-    phase='빠른 공격 계획 구성 중…';updateStatus();
-    const plan=await solveRaid(JSON.parse(snapshot),message=>{phase=message;updateStatus();});
-    clearInterval(ticker);
+  buttons.forEach(button=>{button.disabled=true;button.classList.add('is-calculating');button.dataset.label=button.textContent;button.textContent='CP-SAT 계산 중…';});
+  const snapshot=JSON.stringify({...state,plan:null});
+  const started=Date.now();
+  let phase='CP-SAT 엔진 준비 중…';
+  const updateStatus=()=>{$('planner-status').textContent=`[${Math.floor((Date.now()-started)/1000)}초] ${phase}`;};
+  updateStatus();
+  const ticker=setInterval(updateStatus,1000);
+  let worker=null;
+  try{
+    const plan=await new Promise((resolve,reject)=>{
+      worker=new Worker('./planner-cpsat-worker.js',{type:'module'});
+      const timeout=setTimeout(()=>{worker?.terminate();reject(new Error('CP-SAT 계산 제한 시간을 초과했습니다.'));},45000);
+      worker.onmessage=({data})=>{
+        if(data.progress){phase=data.progress;updateStatus();return}
+        clearTimeout(timeout);
+        if(data.error)reject(new Error(data.error));
+        else resolve(data.plan);
+      };
+      worker.onerror=event=>{
+        clearTimeout(timeout);
+        reject(new Error(event.message||'CP-SAT 계산기를 불러오지 못했습니다.'));
+      };
+      worker.postMessage(JSON.parse(snapshot));
+    });
     if(snapshot!==JSON.stringify({...state,plan:null}))throw new Error('계산 중 입력이 변경됐습니다. 현재 입력으로 다시 계산해 주세요.');
-    if(!plan.attacks?.length){
-      const d=plan.diagnostics||{};
-      throw new Error(`배치 가능한 공격이 0개입니다. 활성 유저 ${d.activeUsers??0}명 · 공격 후보 ${d.candidates??0}개 · 남은 공격권 합계 ${d.totalAttackLimit??0}회`);
+    if(!plan?.attacks?.length){
+      const d=plan?.diagnostics||{};
+      throw new Error(`배치 가능한 공격이 0개입니다. 활성 유저 ${d.activeUsers??0}명 · 공격 후보 ${d.candidates??0}개`);
     }
     state.plan=plan;
     renderSchedule();
     renderLive();
-    localSave(`공격 계획 계산 완료 · ${plan.attacks.length}개 공격을 시간표에 표시했습니다.`);
+    localSave(`CP-SAT 계산 완료 · ${plan.attacks.length}개 공격 · 총 오버딜 ${displayNumber(plan.summary.totalOverkill)}`);
+  }catch(error){
+    $('planner-status').textContent=`계산 실패: ${error.message}`;
+  }finally{
+    clearInterval(ticker);
+    worker?.terminate();
+    buttons.forEach(button=>{button.disabled=false;button.classList.remove('is-calculating');button.textContent=button.dataset.label;});
   }
-  catch(error){$('planner-status').textContent=`계산 실패: ${error.message}`;}
-  finally{buttons.forEach(button=>{button.disabled=false;button.classList.remove('is-calculating');button.textContent=button.dataset.label;});}
 }
 document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b===button));document.querySelectorAll('.planner-view').forEach(v=>v.hidden=v.id!==`view-${button.dataset.view}`)}));
 for(const id of ['result-form','lock-form'])$(id).elements.user.addEventListener('change',e=>updatePartySelect(e.target.form));
