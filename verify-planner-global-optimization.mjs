@@ -44,7 +44,7 @@ const done=(list,except=[])=>list.filter(b=>b.round!==4&&!except.includes(b.id))
     {id:'over',name:'홍삼맛캔디',active:true,attacksLeft:1,parties:[party('over-fire','작열',20_304_443_028,['f','g','h','i','j'])]}
   ];
   const plan=await solveRaidCpSat({users,bosses:bs,results,locks:[],settings:{startAt:'2026-09-07T05:00',damageTolerance:1_000_000_000},__solverMaxSeconds:20,__solverSeed:2});
-  assert.equal(plan.summary.reachedRound,2,'1B tolerance should count the boss as cleared');
+  assert.equal(plan.summary.reachedFinal,true,'R1 fire must be treated as cleared within the 1B tolerance');
   const r1=plan.attacks.filter(a=>a.round===1);
   assert.deepEqual(r1.map(a=>a.partyId),['fit-fire']);
   assert.equal(r1[0].afterHp,703_934_239);
