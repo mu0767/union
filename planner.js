@@ -134,6 +134,45 @@ function timeInSlot(date,slot){
   const minute=date.getHours()*60+date.getMinutes(),a=sh*60+sm,b=eh*60+em;
   return a===b||a<b?(minute>=a&&minute<b):(minute>=a||minute<b);
 }
+function alternativeCandidates(attack,slot){
+  const userResults=new Map();
+  for(const r of state.results||[]){
+    if(!userResults.has(r.userId))userResults.set(r.userId,[]);
+    userResults.get(r.userId).push(r);
+  }
+  const assignedByUser=new Map();
+  for(const a of state.plan?.attacks||[]){
+    if(!assignedByUser.has(a.userId))assignedByUser.set(a.userId,[]);
+    assignedByUser.get(a.userId).push(a);
+  }
+  const targetBoss=state.bosses.find(b=>b.id===attack.bossId);
+  if(!targetBoss)return [];
+  const candidates=[];
+  for(const user of state.users.filter(u=>u.active&&u.id!==attack.userId)){
+    const completed=userResults.get(user.id)||[];
+    const planned=assignedByUser.get(user.id)||[];
+    const usedNikkes=new Set(completed.flatMap(r=>r.nikkes||[]));
+    const plannedNikkes=new Set(planned.flatMap(a=>a.nikkes||[]));
+    const usedAttacks=completed.length+planned.length;
+    if(usedAttacks>=3)continue;
+    for(const party of user.parties||[]){
+      if(party.element!==targetBoss.element)continue;
+      if(party.nikkes.some(n=>usedNikkes.has(n)||plannedNikkes.has(n)))continue;
+      const damage=targetBoss.round===4?(party.finalDamage??party.normalDamage):party.normalDamage;
+      if(!damage)continue;
+      const fits=(user.availability||[]).some(w=>{
+        const fake=new Date(attack.start);
+        const [sh,sm]=w.start.split(':').map(Number),[eh,em]=w.end.split(':').map(Number);
+        const min=fake.getHours()*60+fake.getMinutes(),a=sh*60+sm,b=eh*60+em;
+        return a===b||a<b?(min>=a&&min<b):(min>=a||min<b);
+      });
+      if(!fits)continue;
+      candidates.push({user,party,damage});
+    }
+  }
+  return candidates.sort((a,b)=>b.damage-a.damage).slice(0,8);
+}
+
 function renderPlan(plan,target=$('plan-list')){
   if(!plan?.length){target.className='plan-list empty-card';target.innerHTML='표시할 추천 공격이 없습니다.';return}
   target.className='plan-list';
@@ -177,10 +216,16 @@ function renderPlan(plan,target=$('plan-list')){
         const planned=untilSlot.filter(a=>a.bossId===b.id).reduce((s,a)=>s+a.damage,0);
         return displayNumber(Math.max(0,b.hp-(baseDamage[b.id]||0)-planned));
       });
+      const alternatives=bosses.map(b=>{
+        const attack=attacks.find(a=>a.bossId===b.id);
+        if(!attack)return [];
+        return alternativeCandidates(attack,slot);
+      });
       return `<div class="raid-board-wrap"><div class="raid-round-label">R${round===4?'최종':round}</div><div class="raid-board" style="--cols:${bosses.length}">
         <div class="raid-board-head"><span></span>${bosses.map(b=>`<strong>${escapeHTML(b.name)}<small>${escapeHTML(b.element)}</small></strong>`).join('')}</div>
         ${Array.from({length:rows},(_,row)=>`<div class="raid-board-row"><span class="raid-row-index">${row+1}</span>${bosses.map(b=>`<div class="raid-board-cell">${attacks.filter(a=>a.bossId===b.id)[row] ? attackCard(attacks.filter(a=>a.bossId===b.id)[row]) : ''}</div>`).join('')}</div>`).join('')}
         <div class="raid-board-footer"><span>남은 HP</span>${remaining.map(v=>`<strong>${v}</strong>`).join('')}</div>
+        <div class="raid-board-alts"><span>대체 후보</span>${alternatives.map(list=>`<div>${list.length?list.map(x=>`<button type="button" class="alt-candidate" title="${escapeHTML(x.party.name)} · ${x.party.nikkes.map(escapeHTML).join(' / ')}"><strong>${escapeHTML(x.user.name)}</strong><small>${displayNumber(x.damage)}</small></button>`).join(''):'<small class="no-alt">없음</small>'}</div>`).join('')}</div>
       </div></div>`;
     }).join('')}</section>`;
   }).join('');
