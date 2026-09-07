@@ -31,3 +31,15 @@
 .raid-slot-done{padding:3px 6px;border:1px solid #4f8d69;border-radius:999px;color:#8ed5a8;font-size:9px;font-weight:700}
 .raid-slot-card.completed b{color:#9be0b4}
 .raid-slot-card.completed em{color:#789786}
+
+.attack-party-choices{margin-top:16px}.attack-party-choices>.help{margin:4px 0 10px}
+.party-choice{width:100%;text-align:left;margin:8px 0;padding:10px;border:1px solid #3a4050;border-radius:10px;background:#171b24;color:inherit;cursor:pointer}
+.party-choice>div:first-child{display:flex;justify-content:space-between;gap:12px;align-items:center}
+.party-choice.selected{border-color:#7aa2ff;box-shadow:inset 0 0 0 1px rgba(122,162,255,.25)}
+.party-choice.blocked{border-color:#7a3535;background:#2a1719;color:#c77;cursor:not-allowed;opacity:.78}
+.party-choice.blocked strong,.party-choice.blocked small,.party-choice.blocked figcaption{text-decoration:line-through}
+.party-choice em{display:block;margin-top:6px;color:#ff7b7b;font-size:11px}
+.party-choice-portraits{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}
+.party-choice-portraits figure{margin:0;width:44px}.party-choice-portraits img{width:44px;height:44px;object-fit:cover;border-radius:7px}
+.party-choice-portraits figcaption{font-size:8px;line-height:1.1;margin-top:2px}
+.party-choice .used-nikke{filter:saturate(.45);color:#ff7b7b;text-decoration:line-through}.party-choice figure.used-nikke img{outline:2px solid #b64a4a;opacity:.6}
