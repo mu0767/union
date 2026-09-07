@@ -121,10 +121,43 @@ function renderLive(){
 }
 function compactEntry(entry,type){const u=state.users.find(x=>x.id===entry.userId),p=u?.parties.find(x=>x.id===entry.partyId),b=state.bosses.find(x=>x.id===entry.bossId);return`<div class="compact-item"><span>${escapeHTML(entry.userName||u?.name||'삭제된 유저')} · ${escapeHTML(entry.partyName||p?.name||'삭제된 파티')} → ${escapeHTML(entry.bossName||b?.name||'삭제된 보스')}${entry.damage!=null?` · ${displayNumber(entry.damage)}`:''}</span>${type==='lock'?`<button data-remove-lock="${entry.id}">잠금 해제</button>`:'<small>완료 확정</small>'}</div>`}
 function renderPlan(plan,target=$('plan-list'),group=target===$('plan-list')?$('plan-group').value:null){
-  if(!plan?.length){target.className='plan-list empty-card';target.innerHTML='표시할 추천 공격이 없습니다.';return}target.className='plan-list';
-  const bucket=a=>{if(group==='boss')return `R${a.round===4?'최종':a.round} · ${a.bossName}`;if(group==='user')return a.userName;if(group==='time'){const date=new Date(a.start),relative=(date.getHours()-5+24)%24,start=(Math.floor(relative/3)*3+5)%24,end=(start+3)%24;return `${String(start).padStart(2,'0')}:00~${String(end).padStart(2,'0')}:00`}return''};
-  const groups=new Map();for(const attack of plan){const key=bucket(attack);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(attack)}
-  target.innerHTML=[...groups].map(([label,attacks])=>`${label?`<h3 class="plan-group-title">${escapeHTML(label)}</h3>`:''}${attacks.map(a=>`<article class="plan-card"><strong>${escapeHTML(a.timeLabel||a.start||'시간 미정')}</strong><div><small>R${a.round===4?'최종':a.round} · ${escapeHTML(a.element)} · ${a.attackNumber}타</small><p>${escapeHTML(a.userName)} → ${escapeHTML(a.bossName)}</p><small>${escapeHTML(a.partyName)} · ${a.nikkes.map(escapeHTML).join(' / ')}</small></div><div><strong>${displayNumber(a.damage)}</strong><small>${a.beforeHp==='infinite'?'∞':displayNumber(a.beforeHp)} → ${a.afterHp==='infinite'?'∞':displayNumber(a.afterHp)} · 오버 ${displayNumber(a.overkill)}</small></div></article>`).join('')}`).join('')}
+  if(!plan?.length){target.className='plan-list empty-card';target.innerHTML='표시할 추천 공격이 없습니다.';return}
+  target.className='plan-list';
+
+  if(target!==$('plan-list')){
+    target.innerHTML=plan.map(a=>`<article class="plan-card"><strong>${escapeHTML(a.timeLabel||a.start||'시간 미정')}</strong><div><small>R${a.round===4?'최종':a.round} · ${escapeHTML(a.element)} · ${a.attackNumber}타</small><p>${escapeHTML(a.userName)} → ${escapeHTML(a.bossName)}</p><small>${escapeHTML(a.partyName)}</small></div><div><strong>${displayNumber(a.damage)}</strong></div></article>`).join('');
+    return;
+  }
+
+  const order=['풍압','철갑','작열','수냉','전격'];
+  const short={풍압:'풍',철갑:'철',작열:'작',수냉:'수',전격:'전'};
+  const slot=a=>{
+    const date=new Date(a.start),relative=(date.getHours()-5+24)%24,start=(Math.floor(relative/3)*3+5)%24,end=(start+3)%24;
+    return `${String(start).padStart(2,'0')}:00~${String(end).padStart(2,'0')}:00`;
+  };
+  const timeGroups=new Map();
+  for(const a of plan){
+    const key=slot(a);
+    if(!timeGroups.has(key))timeGroups.set(key,[]);
+    timeGroups.get(key).push(a);
+  }
+  const attackCard=a=>`<article class="raid-slot-card">
+    <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong><time>${escapeHTML((a.timeLabel||'').split(' ').at(-1)||'')}</time></div>
+    <small>${escapeHTML(a.partyName)} · ${a.attackNumber}타</small>
+    <b>${displayNumber(a.damage)}</b>
+    <em>${a.beforeHp==='infinite'?'∞':displayNumber(a.beforeHp)} → ${a.afterHp==='infinite'?'∞':displayNumber(a.afterHp)}${a.overkill? ` · 오버 ${displayNumber(a.overkill)}` : ''}</em>
+  </article>`;
+  target.innerHTML=[...timeGroups].map(([time,attacks])=>{
+    const rounds=[...new Set(attacks.map(a=>a.round))].sort((a,b)=>a-b);
+    return `<section class="raid-time-block"><h3>${escapeHTML(time)}</h3>${rounds.map(round=>{
+      const rows=Math.max(1,...order.map(element=>attacks.filter(a=>a.round===round&&a.element===element).length));
+      return `<div class="raid-board-wrap"><div class="raid-round-label">R${round===4?'최종':round}</div><div class="raid-board">
+        <div class="raid-board-head"><span></span>${order.map(e=>`<strong>${short[e]}<small>${e}</small></strong>`).join('')}</div>
+        ${Array.from({length:rows},(_,row)=>`<div class="raid-board-row"><span class="raid-row-index">${row+1}</span>${order.map(element=>`<div class="raid-board-cell">${attacks.filter(a=>a.round===round&&a.element===element)[row] ? attackCard(attacks.filter(a=>a.round===round&&a.element===element)[row]) : ''}</div>`).join('')}</div>`).join('')}
+      </div></div>`;
+    }).join('')}</section>`;
+  }).join('');
+}
 function renderTheory(){const plan=state.plan;if(!plan){$('plan-summary').innerHTML='';renderPlan(null);return}const s=plan.summary;$('plan-summary').innerHTML=[['예상 도달',s.reachedFinal?'최종보스':`Round ${s.reachedRound}`],['공격 사용',`${s.attackCount}회`],['총 오버딜',displayNumber(s.totalOverkill)],['최종보스 딜',displayNumber(s.finalDamage)]].map(x=>`<div class="summary-card"><small>${x[0]}</small><strong>${x[1]}</strong></div>`).join('');renderPlan(plan.attacks)}
 function renderSettings(){const f=$('raid-settings');Object.entries(state.settings).forEach(([k,v])=>{if(f.elements[k])f.elements[k].value=String(v)});$('planner-boss-body').innerHTML=state.bosses.map(b=>`<tr data-boss-id="${b.id}"><td>${b.round===4?'최종':b.round}</td><td><input name="bossName" value="${escapeHTML(b.name)}" required maxlength="80"></td><td><select name="bossElement">${ELEMENTS.map(e=>`<option${e===b.element?' selected':''}>${e}</option>`).join('')}</select></td><td><input name="bossHp" inputmode="numeric" value="${b.hp==='infinite'?'무한':displayNumber(b.hp)}" required></td></tr>`).join('')}
 function renderAll(){renderMembers();renderLive();renderTheory()}
