@@ -14,8 +14,6 @@ export async function solveRaidHybrid(state,progress=()=>{}){
   const bosses=state.bosses||[];
   const normal=bosses.filter(b=>[1,2,3].includes(b.round));
   const final=bosses.find(b=>b.round===4);
-  const userById=new Map(users.map(u=>[u.id,u]));
-  const bossById=new Map(bosses.map(b=>[b.id,b]));
   const actual=new Map(),usedActual=new Map(),resultCount=new Map();
   for(const r of state.results||[]){
     add(actual,r.bossId,Number(r.damage||0));add(resultCount,r.userId,1);
@@ -75,9 +73,13 @@ export async function solveRaidHybrid(state,progress=()=>{}){
     for(const b of normal){const d=sel.filter(c=>c.bossId===b.id).reduce((s,c)=>s+c.damage,0);over+=Math.max(0,d-remaining(b));}
     return{stage,target,waste,over,count:sel.length};
   };
-  const slack=Math.max(1,tolerance||1);
+  const practicalSlack=(a,b)=>{
+    const scale=Math.max(1,Math.floor(Math.max(a.target,b.target)/100));
+    return Math.min(Math.max(1,tolerance||1),scale);
+  };
   const better=(a,b)=>{
     if(a.stage!==b.stage)return a.stage>b.stage;
+    const slack=practicalSlack(a,b);
     if(a.target>b.target+slack)return true;
     if(b.target>a.target+slack)return false;
     if(a.waste!==b.waste)return a.waste<b.waste;
