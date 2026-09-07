@@ -34,8 +34,8 @@
     card.className='summary-card';
     card.dataset.optimizerProof='true';
     const o=plan.summary?.optimization||{};
-    const proof=plan.status==='OPTIMAL'?'최적해 증명 완료':'최적성 미증명';
-    card.innerHTML=`<small>최적화 상태</small><strong>${proof}</strong><small>도달 ${o.stage||'-'} · 목표딜 ${o.target||'-'} · 낭비 ${o.waste||'-'}</small>`;
+    const proof=plan.status==='OPTIMAL'?'충분히 좋은 계획 · 최적성도 증명됨':'실전 최선해 · 계속 개선 가능한 해';
+    card.innerHTML=`<small>최적화 상태</small><strong>${proof}</strong><small>효율 우선 초기배치 → 전역 교환/개선 · 도달 ${o.stage||'-'} · 목표딜 ${o.target||'-'} · 낭비 ${o.waste||'-'}</small>`;
     holder.append(card);
   };
 
@@ -106,6 +106,7 @@
           const input=JSON.parse(snapshot);
           input.__solverSeed=index+1;
           input.__solverMaxSeconds=300;
+          input.__levelAttackPower=window.LEVEL_ATTACK_POWER||{};
           worker.postMessage(input);
         }
       });
@@ -119,7 +120,7 @@
       renderSchedule();
       renderProof(plan);
       renderLive();
-      const proof=plan.status==='OPTIMAL'?'최적해 증명 완료':'최선해 · 최적성 미증명';
+      const proof=plan.status==='OPTIMAL'?'실전 최선해 · 최적성 증명':'실전 최선해';
       const o=plan.summary.optimization||{};
       localSave(`${proof} · 도달 ${o.stage||'-'} / 목표딜 ${o.target||'-'} / 낭비 ${o.waste||'-'} · ${plan.attacks.length}개 공격 · ${plan.summary.reachedFinal?'최종보스 딜':`R${plan.summary.reachedRound} 유효 딜`} ${displayNumber(plan.summary.targetDamage)} · 계획 낭비 ${displayNumber(plan.summary.planningWaste||0)} · 실제 오버딜 ${displayNumber(plan.summary.totalOverkill)}`);
     }catch(error){
