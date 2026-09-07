@@ -216,21 +216,15 @@ function renderPlan(plan,target=$('plan-list')){
     return `<section class="raid-time-block"><h3>${escapeHTML(slot.label)}</h3>${rounds.map(round=>{
       const bosses=state.bosses.filter(b=>b.round===round);
       const rows=Math.max(1,...bosses.map(b=>attacks.filter(a=>a.bossId===b.id).length));
-      const untilSlot=plan.filter(a=>{
-        const d=new Date(a.start);
-        const slotAttacks=attacks.length?attacks:[];
-        if(!slotAttacks.length)return false;
-        const latest=Math.max(...slotAttacks.map(x=>new Date(x.start).getTime()));
-        return d.getTime()<=latest;
-      });
+      const cumulativeAttacks=slotBuckets.slice(0,slotIndex+1).flat();
       const remaining=bosses.map(b=>{
         if(b.hp==='infinite')return '∞';
-        const planned=untilSlot.filter(a=>a.bossId===b.id).reduce((s,a)=>s+a.damage,0);
+        const planned=cumulativeAttacks.filter(a=>a.bossId===b.id).reduce((s,a)=>s+a.damage,0);
         return displayNumber(Math.max(0,b.hp-(baseDamage[b.id]||0)-planned));
       });
       const overkill=bosses.map(b=>{
         if(b.hp==='infinite')return '0';
-        const planned=untilSlot.filter(a=>a.bossId===b.id).reduce((s,a)=>s+a.damage,0);
+        const planned=cumulativeAttacks.filter(a=>a.bossId===b.id).reduce((s,a)=>s+a.damage,0);
         return displayNumber(Math.max(0,(baseDamage[b.id]||0)+planned-b.hp));
       });
       const alternatives=bosses.map(b=>{
