@@ -172,3 +172,15 @@ let transferredState = null;
 try { if (window.name.startsWith('union-planner-state:')) { transferredState = validateState(JSON.parse(window.name.slice('union-planner-state:'.length))); window.name = ''; } } catch { window.name = ''; }
 try{state=transferredState||validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed())}catch{state=parseUnionRaidSeed()}ensurePlanningSettings();selectedUser=state.users[0]?.id||null;renderAll();
 if(new URLSearchParams(location.search).get('calculate')==='1'){history.replaceState(null,'',location.pathname);setTimeout(calculate,0)}
+
+(async function showBuild(){
+  const badge=$('build-badge');if(!badge)return;
+  try{
+    const response=await fetch('https://api.github.com/repos/mu0767/union/commits/main',{cache:'no-store'});
+    if(!response.ok)throw new Error();
+    const commit=await response.json(),sha=String(commit.sha||'').slice(0,7);
+    if(!sha)throw new Error();
+    badge.textContent=`build ${sha}`;
+    badge.href=`https://github.com/mu0767/union/commit/${commit.sha}`;
+  }catch{badge.textContent='build ?';}
+})();
