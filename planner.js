@@ -192,7 +192,7 @@ function renderPlan(plan,target=$('plan-list')){
     const idx=state.plan?.attacks?.indexOf(a)??-1;
     const portraits=a.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
     return `<button class="raid-slot-card" data-plan-index="${idx}">
-      <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong><time>${escapeHTML((a.timeLabel||'').split(' ').at(-1)||'')}</time></div>
+      <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong></div>
       <div class="raid-slot-portraits">${portraits}</div>
       <small>${a.attackNumber}타</small>
       <b>${displayNumber(a.damage)}</b>
@@ -311,7 +311,6 @@ async function solveRaid(state, progress = () => {}) {
   // optimality can take minutes in a browser for a 32-member raid.
   progress('빠른 공격 계획 구성 중…');
   const damage=new Map(actual),chars=new Map([...used].map(([u,n])=>[u,new Set(n)])),attackCounts=new Map(),selected=[];
-  let clock=0;
   const attackLimit=users.reduce((sum,u)=>sum+u.attacksLeft,0);
 
   function maxFutureAttacks(userId, extraUsed, need){
@@ -397,7 +396,7 @@ async function solveRaid(state, progress = () => {}) {
       const already=attackCounts.get(c.user.id)||0;
       if(c.boss.round!==round||!c.damage||already>=c.user.attacksLeft||c.party.nikkes.some(n=>chars.get(c.user.id)?.has(n)))continue;
       const hp=c.boss.round===4?Infinity:Math.max(0,c.boss.hp-(damage.get(c.boss.id)||0));if(!hp)continue;
-      const times=c.windows.map(([a,b])=>Math.max(a,clock)<=b?Math.max(a,clock):Infinity),minute=Math.min(...times);if(!Number.isFinite(minute))continue;
+      const times=c.windows.map(([a,b])=>a<=b?a:Infinity),minute=Math.min(...times);if(!Number.isFinite(minute))continue;
 
       const afterUsed=new Set(chars.get(c.user.id)||[]);c.party.nikkes.forEach(n=>afterUsed.add(n));
       const remainingNeed=c.user.attacksLeft-(already+1);
@@ -428,7 +427,7 @@ async function solveRaid(state, progress = () => {}) {
       if(better)pick={...c,minute,rank};
     }
     if(!pick)break;
-    selected.push(pick);clock=pick.minute+duration;add(attackCounts,pick.user.id,1);add(damage,pick.boss.id,pick.damage);
+    selected.push(pick);add(attackCounts,pick.user.id,1);add(damage,pick.boss.id,pick.damage);
     if(!chars.has(pick.user.id))chars.set(pick.user.id,new Set());pick.party.nikkes.forEach(n=>chars.get(pick.user.id).add(n));
   }
   const stage=[1,2,3].filter(r=>normal.filter(b=>b.round===r).every(b=>(damage.get(b.id)||0)>=b.hp)).length;
