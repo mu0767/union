@@ -292,7 +292,8 @@ window.addEventListener('hashchange', () => selectPage(location.hash === '#bosse
 document.querySelectorAll('[data-stage]').forEach(button => {
   if (button.dataset.stage !== 'all') button.textContent = raidLabel(Number(button.dataset.stage) - 1);
 });
-const characters = [...(window.NIKKE_CHARACTERS || [])].sort((a,b) => b.name.length - a.name.length);
+const characters = [...new Map([...(window.NIKKE_CHARACTER_CATALOG||[]),...(window.NIKKE_CHARACTERS||[])].map(x=>[x.name,x])).values()].sort((a,b)=>b.name.length-a.name.length);
+const characterSrc = c => c?.image || c?.source || '';
 function splitTeam(team) {
   const compact = value => value.replace(/\s/g, '');
   function match(rest, members) {
@@ -314,7 +315,7 @@ function renderTeam(team, note = '') {
   if (!members) return `<p class="unknown-team">${escapeHTML(team)}</p>`;
   return `<div class="character-grid">${members.map(character => {
     const missing = note.includes(character.name);
-    return `<figure class="character${missing ? ' missing' : ''}"><div class="portrait"><img src="${escapeHTML(character.image)}" alt="${escapeHTML(character.name)}" loading="lazy" decoding="async">${missing ? '<span class="missing-badge">미보유</span>' : ''}</div><figcaption>${escapeHTML(character.name)}</figcaption></figure>`;
+    return `<figure class="character${missing ? ' missing' : ''}"><div class="portrait"><img src="${escapeHTML(characterSrc(character))}" alt="${escapeHTML(character.name)}" loading="lazy" decoding="async">${missing ? '<span class="missing-badge">미보유</span>' : ''}</div><figcaption>${escapeHTML(character.name)}</figcaption></figure>`;
   }).join('')}</div>`;
 }
 function renderLineups() {
@@ -335,7 +336,7 @@ function render() {
   const rows = visiblePeople();
   $('count').textContent = `${rows.length}명`;
   $('table-head').innerHTML = `<tr><th scope="col">지휘관 / 싱크로</th>${stages.map(i => `<th scope="col">${escapeHTML(raidRounds[1][i].name)}<br><span>${raidLabel(i)} / 딜량</span></th>`).join('')}</tr>`;
-  $('table-body').innerHTML = rows.map(p => `<tr><td><button class="commander" data-person="${p.index}" aria-label="${escapeHTML(p.name)} 편성 상세"><span class="person-index">${String(p.index+1).padStart(2,'0')}</span>${escapeHTML(p.name)}</button><span class="level">Lv. ${p.level}</span></td>${stages.map(i => `<td>${p.stages[i].squads.map((s,j) => { const names = s.nikkes?.length ? s.nikkes : (splitTeam(s.team) || []).map(character => character.name); return `<button class="damage-line squad-trigger" data-squad="${p.index}:${i}:${j}" aria-label="${escapeHTML(p.name)} 덱 ${escapeHTML(s.deck || String(j+1))} 구성 보기"><span class="damage-value"><small>${escapeHTML(s.deck || String(j+1))}</small>${format(scaledDamage(s.damage, i))}</span><span class="inline-squad">${names.map(name => { const character = characters.find(item => item.name === name); return character ? `<img src="${escapeHTML(character.image)}" alt="${escapeHTML(name)}" title="${escapeHTML(name)}" loading="lazy" decoding="async">` : `<em title="${escapeHTML(name)}">${escapeHTML(name)}</em>`; }).join('')}</span></button>`; }).join('')}</td>`).join('')}</tr>`).join('');
+  $('table-body').innerHTML = rows.map(p => `<tr><td><button class="commander" data-person="${p.index}" aria-label="${escapeHTML(p.name)} 편성 상세"><span class="person-index">${String(p.index+1).padStart(2,'0')}</span>${escapeHTML(p.name)}</button><span class="level">Lv. ${p.level}</span></td>${stages.map(i => `<td>${p.stages[i].squads.map((s,j) => { const names = s.nikkes?.length ? s.nikkes : (splitTeam(s.team) || []).map(character => character.name); return `<button class="damage-line squad-trigger" data-squad="${p.index}:${i}:${j}" aria-label="${escapeHTML(p.name)} 덱 ${escapeHTML(s.deck || String(j+1))} 구성 보기"><span class="damage-value"><small>${escapeHTML(s.deck || String(j+1))}</small>${format(scaledDamage(s.damage, i))}</span><span class="inline-squad">${names.map(name => { const character = characters.find(item => item.name === name); return character ? `<img src="${escapeHTML(characterSrc(character))}" alt="${escapeHTML(name)}" title="${escapeHTML(name)}" loading="lazy" decoding="async">` : `<em title="${escapeHTML(name)}">${escapeHTML(name)}</em>`; }).join('')}</span></button>`; }).join('')}</td>`).join('')}</tr>`).join('');
   $('empty').hidden = rows.length > 0;
 }
 function renderStats() {
@@ -357,7 +358,7 @@ function showSquad(personIndex, stageIndex, squadIndex) {
   if (!squad) return;
   const nikkes = squad.nikkes?.length ? squad.nikkes : (splitTeam(squad.team) || []).map(character => character.name);
   $('detail-title').textContent = `${person.name} · ${raidLabel(stageIndex)} · 덱 ${squad.deck || squadIndex + 1}`;
-  $('detail-body').innerHTML = `<section class="detail-stage"><p class="boss-detail-hp">딜량 ${format(scaledDamage(squad.damage, stageIndex))}</p><div class="squad-character-list">${nikkes.map(name => { const character = characters.find(item => item.name === name); return `<article>${character ? `<img src="${escapeHTML(character.image)}" alt="${escapeHTML(name)}" loading="lazy" decoding="async">` : '<span class="portrait-placeholder">N</span>'}<strong>${escapeHTML(name)}</strong></article>`; }).join('')}</div>${squad.note ? `<p class="squad-note">${escapeHTML(squad.note)}</p>` : ''}</section>`;
+  $('detail-body').innerHTML = `<section class="detail-stage"><p class="boss-detail-hp">딜량 ${format(scaledDamage(squad.damage, stageIndex))}</p><div class="squad-character-list">${nikkes.map(name => { const character = characters.find(item => item.name === name); return `<article>${character ? `<img src="${escapeHTML(characterSrc(character))}" alt="${escapeHTML(name)}" loading="lazy" decoding="async">` : '<span class="portrait-placeholder">N</span>'}<strong>${escapeHTML(name)}</strong></article>`; }).join('')}</div>${squad.note ? `<p class="squad-note">${escapeHTML(squad.note)}</p>` : ''}</section>`;
   $('detail').showModal();
 }
 document.querySelectorAll('[data-stage]').forEach(button => button.addEventListener('click', () => {
