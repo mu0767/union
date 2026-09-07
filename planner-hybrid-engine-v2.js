@@ -121,7 +121,9 @@ export async function solveRaidHybrid(state,progress=()=>{}){
       for(const boss of normal.filter(b=>b.round===round)){
         if((actual.get(boss.id)||0)<=0)continue;
         const done=(actual.get(boss.id)||0)+sel.filter(c=>c.boss.id===boss.id).reduce((s,c)=>s+c.damage,0);
-        let need=Math.max(0,Number(boss.hp||0)-tolerance-done);
+        // Once real combat has been recorded on a boss, planning tolerance no longer applies:
+        // any positive residual HP must be assigned to a legal remaining attack.
+        let need=Math.max(0,Number(boss.hp||0)-done);
         if(need<=0)continue;
         const pool=(byBoss.get(boss.id)||[]).filter(c=>canAdd(sel,c)).sort((a,b)=>{
           const ao=Math.max(0,a.damage-need),bo=Math.max(0,b.damage-need);
