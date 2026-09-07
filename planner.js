@@ -296,25 +296,56 @@ async function solveRaid(state, progress = () => {}) {
   const damage=new Map(actual),chars=new Map([...used].map(([u,n])=>[u,new Set(n)])),attackCounts=new Map(),selected=[];
   let clock=lower;
   const attackLimit=users.reduce((sum,u)=>sum+u.attacksLeft,0);
+
+  function maxFutureAttacks(userId, extraUsed, need){
+    if(need<=0)return 0;
+    const pool=[...new Map(candidates.filter(c=>c.user.id===userId&&c.damage).map(c=>[c.party.id,c.party])).values()];
+    let best=0;
+    function dfs(index,usedSet,count){
+      if(count>=need){best=need;return}
+      if(count+(pool.length-index)<=best)return;
+      for(let i=index;i<pool.length&&best<need;i++){
+        const party=pool[i];
+        if(party.nikkes.some(n=>usedSet.has(n)))continue;
+        const next=new Set(usedSet);party.nikkes.forEach(n=>next.add(n));
+        dfs(i+1,next,count+1);
+      }
+      if(count>best)best=count;
+    }
+    dfs(0,new Set(extraUsed),0);
+    return best;
+  }
+
   while(selected.length<attackLimit) {
     const round=[1,2,3].find(r=>normal.some(b=>b.round===r&&(damage.get(b.id)||0)<b.hp))||4;
     let pick=null;
     for(const c of candidates) {
-      if(c.boss.round!==round||!c.damage||(attackCounts.get(c.user.id)||0)>=c.user.attacksLeft||c.party.nikkes.some(n=>chars.get(c.user.id)?.has(n)))continue;
+      const already=attackCounts.get(c.user.id)||0;
+      if(c.boss.round!==round||!c.damage||already>=c.user.attacksLeft||c.party.nikkes.some(n=>chars.get(c.user.id)?.has(n)))continue;
       const hp=c.boss.round===4?Infinity:Math.max(0,c.boss.hp-(damage.get(c.boss.id)||0));if(!hp)continue;
       const times=c.windows.map(([a,b])=>Math.max(a,clock)<=b?Math.max(a,clock):Infinity),minute=Math.min(...times);if(!Number.isFinite(minute))continue;
+
+      const afterUsed=new Set(chars.get(c.user.id)||[]);c.party.nikkes.forEach(n=>afterUsed.add(n));
+      const remainingNeed=c.user.attacksLeft-(already+1);
+      const future=maxFutureAttacks(c.user.id,afterUsed,remainingNeed);
+      const blocksAttack=future<remainingNeed;
+
       const over=c.boss.round===4?0:Math.max(0,c.damage-hp);
       const effective=c.boss.round===4?c.damage:Math.min(hp,c.damage);
       const kills=c.boss.round!==4&&c.damage>=hp;
-      // Fast priority: earliest feasible time, then finishing blows with the least overkill,
-      // otherwise maximize useful damage without wasting a large party.
+
+      // First preserve the user's remaining attack rights. Then prefer immediate kills
+      // with low overkill; otherwise maximize useful damage.
       const rank=c.boss.round===4
-        ? [0,-c.damage]
+        ? [blocksAttack?1:0,0,-c.damage]
         : kills
-          ? [0,over]
-          : [1,-effective];
+          ? [blocksAttack?1:0,0,over]
+          : [blocksAttack?1:0,1,-effective];
+
       const better=!pick||minute<pick.minute||minute===pick.minute&&(
-        rank[0]<pick.rank[0]||rank[0]===pick.rank[0]&&rank[1]<pick.rank[1]
+        rank[0]<pick.rank[0]||
+        rank[0]===pick.rank[0]&&rank[1]<pick.rank[1]||
+        rank[0]===pick.rank[0]&&rank[1]===pick.rank[1]&&rank[2]<pick.rank[2]
       );
       if(better)pick={...c,minute,rank};
     }
