@@ -36,6 +36,9 @@ const done=(list,except=[])=>list.filter(b=>b.round!==4&&!except.includes(b.id))
   const open=['1-작열'];
   const results=done(bs,open.concat(bs.filter(b=>b.round>=2&&b.round<=3).map(b=>b.id)));
   results.push({userId:'done',bossId:'1-작열',damage:134_146_924_370,nikkes:[]});
+  // Remove the symmetric "use the other fire party on R2" tie. R2 fire is
+  // already done, while the other R2 bosses remain open and cannot be cleared.
+  results.push({userId:'done',bossId:'2-작열',damage:100,nikkes:[]});
   const users=[
     {id:'fit',name:'미레온',active:true,attacksLeft:1,parties:[party('fit-fire','작열',15_990_954_991,['a','b','c','d','e'])]},
     {id:'over',name:'홍삼맛캔디',active:true,attacksLeft:1,parties:[party('over-fire','작열',20_304_443_028,['f','g','h','i','j'])]}
