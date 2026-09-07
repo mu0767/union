@@ -19,7 +19,7 @@
     <nav class="tabs page-tabs" aria-label="페이지 선택"><a href="index.html">딜량 기록</a><a href="index.html#bosses">보스 정보</a><a class="active" href="planner.html" aria-current="page">레이드 운영</a></nav>
     <p id="planner-status" class="planner-status" role="status" aria-live="polite">이 브라우저에 자동 저장됩니다.</p>
     <nav class="tabs planner-tabs" aria-label="운영 메뉴">
-      <button data-view="members" class="active">사람별 딜량</button><button data-view="theory">이론</button><button data-view="live">실전</button>
+      <button data-view="members" class="active">사람별 딜량</button><button data-view="schedule">시간표</button>
     </nav>
 
     <section id="view-members" class="planner-view">
@@ -32,8 +32,8 @@
       </form></div>
     </section>
 
-    <section id="view-theory" class="planner-view" hidden>
-      <div class="section-title"><div><p class="eyebrow">THEORETICAL PLAN</p><h2>최적 공격 계획</h2></div><div><button id="calculate" class="primary">최적 계획 계산</button></div></div>
+    <section id="view-schedule" class="planner-view" hidden>
+      <div class="section-title"><div><p class="eyebrow">RAID SCHEDULE</p><h2>시간표</h2></div><div><button id="calculate" class="primary">최적 계획 계산</button></div></div>
       <div class="time-slot-settings"><span class="time-slot-title">표시 시간대</span><div id="plan-time-slots" class="time-slot-options">
         <label><input type="checkbox" value="05:00-10:00" checked>05:00-10:00</label>
         <label><input type="checkbox" value="10:00-15:00" checked>10:00-15:00</label>
@@ -41,14 +41,13 @@
         <label><input type="checkbox" value="20:00-05:00" checked>20:00-05:00</label>
       </div></div>
       <div id="plan-summary" class="summary-grid"></div><div id="plan-list" class="plan-list empty-card">계산 버튼을 누르면 운영 계획이 표시됩니다.</div>
-    </section>
 
-    <section id="view-live" class="planner-view" hidden>
       <div class="live-grid"><div><div class="section-title"><div><p class="eyebrow">ACTUAL RESULT</p><h2>실제 공격 입력</h2></div></div><form id="result-form" class="stack-form"><label>공격 유저<select name="user" required></select></label><label>사용 파티<select name="party" required></select></label><label>공격 보스<select name="boss" required></select></label><label>실제 딜<input name="damage" inputmode="numeric" required placeholder="예: 720,000,000"></label><button class="primary">결과 저장</button></form></div>
       <div><div class="section-title"><div><p class="eyebrow">LOCKED ATTACK</p><h2>공격 잠금</h2></div></div><form id="lock-form" class="stack-form"><label>유저<select name="user" required></select></label><label>파티<select name="party" required></select></label><label>대상 보스<select name="boss" required></select></label><button>잠금 추가</button></form></div></div>
       <div class="section-title top-gap"><div><p class="eyebrow">CURRENT OPERATION</p><h2>현재 상태</h2></div><button id="recalculate" class="primary">남은 계획 재계산</button></div>
       <div id="current-bosses" class="summary-grid"></div>
       <h3>잠긴 공격</h3><div id="lock-list" class="compact-list"></div><h3>완료된 공격</h3><div id="result-list" class="compact-list"></div><h3>지금 추천</h3><div id="now-list" class="plan-list empty-card">재계산 후 표시됩니다.</div>
+
     </section>
 
     <section id="view-settings" class="planner-view" hidden>
