@@ -181,7 +181,7 @@ function renderPlan(plan,target=$('plan-list')){
   if(target!==$('plan-list')){
     target.innerHTML=plan.map(a=>{
       const idx=state.plan?.attacks?.indexOf(a)??-1;
-      return `<button class="plan-card plan-card-button" data-plan-index="${idx}"><strong>${escapeHTML(a.timeLabel||a.start||'시간 미정')}</strong><div><small>R${a.round===4?'최종':a.round} · ${escapeHTML(a.element)} · ${a.attackNumber}타</small><p>${escapeHTML(a.userName)} → ${escapeHTML(a.bossName)}</p><small>${escapeHTML(a.partyName)}</small></div><div><strong>${displayNumber(a.damage)}</strong></div></button>`;
+      return `<button class="plan-card plan-card-button" data-plan-index="${idx}"><div><small>R${a.round===4?'최종':a.round} · ${escapeHTML(a.element)} · ${a.attackNumber}타</small><p>${escapeHTML(a.userName)} → ${escapeHTML(a.bossName)}</p></div><div><strong>${displayNumber(a.damage)}</strong></div></button>`;
     }).join('');
     return;
   }
@@ -389,7 +389,12 @@ async function solveRaid(state, progress = () => {}) {
 
   while(selected.length<attackLimit) {
     const round=[1,2,3].find(r=>normal.some(b=>b.round===r&&(damage.get(b.id)||0)<b.hp))||4;
-    const urgentBosses=round===4?[]:normal.filter(b=>b.round===round&&(damage.get(b.id)||0)<b.hp).sort((a,b)=>bossUrgency(round,b)-bossUrgency(round,a));
+    const urgentBosses=round===4?[]:normal.filter(b=>b.round===round&&(damage.get(b.id)||0)<b.hp).sort((a,b)=>{
+      const ar=Math.max(0,a.hp-(damage.get(a.id)||0))/a.hp;
+      const br=Math.max(0,b.hp-(damage.get(b.id)||0))/b.hp;
+      if(br!==ar)return br-ar;
+      return bossUrgency(round,b)-bossUrgency(round,a);
+    });
     const urgentBossId=urgentBosses[0]?.id||null;
     let pick=null;
     for(const c of candidates) {
@@ -414,8 +419,8 @@ async function solveRaid(state, progress = () => {}) {
       const rank=c.boss.round===4
         ? [blocksAttack?1:0,0,0,0,-c.damage]
         : kills
-          ? [keepsRoundClearable?0:1,urgentPenalty,blocksAttack?1:0,0,over]
-          : [keepsRoundClearable?0:1,urgentPenalty,blocksAttack?1:0,1,-effective];
+          ? [urgentPenalty,keepsRoundClearable?0:1,blocksAttack?1:0,0,over]
+          : [urgentPenalty,keepsRoundClearable?0:1,blocksAttack?1:0,1,-effective];
 
       const better=!pick||minute<pick.minute||minute===pick.minute&&(
         rank[0]<pick.rank[0]||
