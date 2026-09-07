@@ -71,7 +71,8 @@ export async function solveRaidHybrid(state,progress=()=>{}){
   // Nested beam: a single boss may require many attacks. Grow bundles one attack
   // at a time and retain only promising partial covers instead of enumerating all combinations.
   function bundleCandidates(boss,base,limit=18){
-    const need=required(boss);if(need<=0)return [[]];
+    const already=base.filter(c=>c.boss.id===boss.id).reduce((s,c)=>s+c.damage,0);
+    const need=Math.max(0,required(boss)-already);if(need<=0)return [[]];
     const all=(byBoss.get(boss.id)||[]).filter(c=>canAdd(base,c));
     if(!all.length)return [];
     const pool=[...all].sort((a,b)=>{
@@ -118,6 +119,7 @@ export async function solveRaidHybrid(state,progress=()=>{}){
     let sel=[...base];
     for(const round of [1,2,3]){
       for(const boss of normal.filter(b=>b.round===round)){
+        if((actual.get(boss.id)||0)<=0)continue;
         const done=(actual.get(boss.id)||0)+sel.filter(c=>c.boss.id===boss.id).reduce((s,c)=>s+c.damage,0);
         let need=Math.max(0,Number(boss.hp||0)-tolerance-done);
         if(need<=0)continue;
