@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const ELEMENTS = ['철갑','수냉','작열','풍압','전격'];
+const BOSS_DISPLAY_ORDER = ['철갑','수냉','작열','전격','풍압'];
 const SEED_ELEMENTS = ['철갑','수냉','작열','전격','풍압'];
 const displayNumber = value => Number(value || 0).toLocaleString('ko-KR');
 const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -241,7 +242,7 @@ function renderPlan(plan,target=$('plan-list')){
   const rounds=[...new Set(ordered.map(a=>a.round))].sort((a,b)=>a-b);
   target.innerHTML=rounds.map(round=>{
       const attacks=ordered.filter(a=>a.round===round);
-      const bosses=state.bosses.filter(b=>b.round===round);
+      const bosses=state.bosses.filter(b=>b.round===round).sort((a,b)=>BOSS_DISPLAY_ORDER.indexOf(a.element)-BOSS_DISPLAY_ORDER.indexOf(b.element));
       const rows=Math.max(1,...bosses.map(b=>attacks.filter(a=>a.bossId===b.id).length));
       const cumulativeAttacks=ordered.filter(a=>a.round<=round);
       const remaining=bosses.map(b=>{
