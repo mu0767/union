@@ -89,6 +89,18 @@ let selectedStage = 'all';
 // 유니온 레이드 1단계: 원본 번호 순서에 대응하는 속성.
 const raidElements = ['철갑', '수냉', '작열', '전격', '풍압'];
 let damageMultipliers = raidElements.map(() => 1);
+async function multiplierStoreRequest(action, values) {
+  const endpoint=window.UNION_SHARED_URL;if(!endpoint)throw new Error('공유 저장소 주소가 없습니다.');
+  const response=await fetch(action==='multipliers'?endpoint+`?action=multipliers&t=${Date.now()}`:endpoint,{
+    method:action==='multipliers'?'GET':'POST',cache:'no-store',
+    ...(action==='multipliers'?{}:{headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'save-multipliers',damageMultipliers:values})})
+  });
+  const data=await response.json();if(!response.ok||data.error)throw new Error(data.error||`HTTP ${response.status}`);return data;
+}
+async function loadSharedMultipliers(){
+  try{const data=await multiplierStoreRequest('multipliers');if(Array.isArray(data.damageMultipliers)&&data.damageMultipliers.length===5)damageMultipliers=data.damageMultipliers.map(Number);}
+  catch{}
+}
 const scaledDamage = (value, stageIndex) => value === null ? null : Math.round(value * damageMultipliers[stageIndex]);
 const scaledTotal = (stage, stageIndex) => stage.squads.reduce((sum, squad) => sum + (scaledDamage(squad.damage, stageIndex) || 0), 0);
 const raidLabel = index => raidRounds[1][index].element;
@@ -307,6 +319,7 @@ $('multipliers-toggle').addEventListener('click', () => {
   panel.hidden = !panel.hidden;
   $('multipliers-toggle').setAttribute('aria-expanded', String(!panel.hidden));
 });
+let multiplierSaveTimer;
 $('multiplier-fields').addEventListener('input', event => {
   const input = event.target.closest('[data-multiplier]');
   if (!input) return;
@@ -314,9 +327,12 @@ $('multiplier-fields').addEventListener('input', event => {
   if (!Number.isFinite(value) || value < 0) return;
   damageMultipliers[Number(input.dataset.multiplier)] = value;
   render();
+  clearTimeout(multiplierSaveTimer);
+  multiplierSaveTimer=setTimeout(()=>multiplierStoreRequest('save-multipliers',damageMultipliers).catch(()=>{}),400);
 });
-$('multipliers-reset').addEventListener('click', () => { damageMultipliers = raidElements.map(() => 1); renderMultipliers(); render(); });
-renderMultipliers();
+$('multipliers-reset').addEventListener('click', () => { damageMultipliers = raidElements.map(() => 1); renderMultipliers(); render(); multiplierStoreRequest('save-multipliers',damageMultipliers).catch(()=>{}); });
+loadSharedMultipliers().finally(()=>{renderMultipliers();render();});
+
 selectPage(location.hash === '#bosses' ? 'bosses' : 'records');
 window.addEventListener('hashchange', () => selectPage(location.hash === '#bosses' ? 'bosses' : 'records'));
 document.querySelectorAll('[data-stage]').forEach(button => {
