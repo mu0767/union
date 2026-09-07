@@ -55,5 +55,14 @@
       </form>
     </section>
   </main>
+  <dialog id="attack-detail-dialog">
+    <div class="dialog-heading"><div><p class="eyebrow">ATTACK DETAIL</p><h2 id="attack-detail-title">공격 상세</h2></div><button type="button" id="attack-detail-close">닫기</button></div>
+    <div id="attack-detail-body"></div>
+    <form id="attack-actual-form" class="attack-actual-form">
+      <input type="hidden" name="attackIndex">
+      <label>실제 딜량<input name="damage" inputmode="numeric" required placeholder="실제 딜 입력"></label>
+      <button class="primary">실제 결과 저장</button>
+    </form>
+  </dialog>
 </body>
 </html>
