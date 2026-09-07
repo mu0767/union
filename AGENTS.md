@@ -1,53 +1,54 @@
-# 프로젝트 작업 지침
+# Repository working rules
 
-이 저장소에서 작업하는 모든 에이전트는 구현·수정·검증 전에 아래 최적화 목표를 확인한다. 이후 사용자의 명시적인 변경 지시가 없는 한 모든 대화와 작업에 적용한다.
+## Raid optimizer objective
 
-## 세션 시작과 인수인계
+The planner is a practical anytime global optimizer. Do not optimize one round independently and do not spend the time budget proving tiny numerical differences.
 
-- 이 파일이 공통 프로젝트 지침의 원본이다. 상세 최적화 구조는 `OPTIMIZER_DESIGN.md`, 진행 상태는 `PROJECT_STATUS.md`를 따른다.
-- 시작할 때 위 문서와 관련 코드를 확인한다. 과거 검증 결과를 현재 코드의 보장으로 간주하지 않는다.
-- 사용자가 목표나 제약을 정정하면 문서와 구현을 함께 갱신한다.
+Priority:
+1. Reach the highest possible raid stage.
+2. If Final is reached, maximize Final damage; otherwise maximize effective damage in the last reachable normal round.
+3. Within a practically equivalent target range, reduce earlier-round planning waste/overkill and preserve useful attacks/resources.
 
-## 레이드 계획의 최우선 목표
+Normal bosses with at most 1,000,000,000 HP remaining count as cleared for planning purposes. UI actual overkill remains true damage beyond actual HP.
 
-**전체 레이드를 처음부터 끝까지 고려하되, 수학적 최적값 증명보다 30초 안에 실전적으로 충분히 좋은 전역 계획을 찾는 것을 우선한다.**
+## Current runtime path
 
-계획 비교 우선순위:
-1. 가능한 한 높은 라운드에 도달한다.
-2. 최종보스 도달 시 최종보스 딜을 높인다. 미도달 시 마지막 도달 라운드 유효 딜을 높인다.
-3. 목표 딜 차이가 허용 오차 범위 안이면 사실상 동급으로 취급하고, 앞선 라운드의 과도한 낭비와 실제 오버딜을 줄인다.
-4. 같은 수준이면 공격권·강한 파티·공유 니케를 더 유용하게 배분한다.
+`planner.js` → `planner-optimizer-ui.js` → `planner-cpsat-worker.js` → `planner-hybrid-engine-v3.js` → `planner-hybrid-engine-v2.js`
 
-## 반드시 지킬 해석
+- v2 builds feasible initial plans with nested Beam Search, applies local cross-round swaps, then uses global CP-SAT improvement.
+- v3 performs the final deterministic neighborhood cleanup: 1:0 removal, 1:1 swap, 2:1 replacement and 1:2 split.
+- Default total wall-clock budget is 30 seconds.
+- Initial efficiency preferences are guidance only. Never delete/fix lower-efficiency candidates merely because another candidate scores better locally.
 
-- 일반 보스 HP 대비 1,000,000,000(10억) 이하 잔여 HP는 계획상 클리어로 인정한다.
-- 오버딜 최소화가 더 높은 라운드나 의미 있게 큰 최종 딜보다 앞서면 안 된다.
-- 반대로 목표 딜 차이가 허용 범위 안인데 한쪽이 수십~수백억 더 낭비하면 그 해를 선택하지 않는다.
-- 유저별 상대 효율은 레벨별 공격력으로 보정한 뒤 같은 속성 중앙값을 100%로 계산한다.
-- 효율은 탐색 우선순위다. 효율이 낮다는 이유로 후보를 삭제하거나 강제 고정하지 않는다.
-- 속성 희소성, 니케 희소성, HP 적합도, 공격권, 미래 대체 가능성을 함께 본다.
-- 앞 라운드에 강한 공격만 몰지 않는다. HP를 맞추는 작은 공격과 섞어 이후 라운드 교환 여지를 남긴다.
-- 보스 하나가 3타보다 많이 필요할 수 있으므로 초기해 생성이 공격 수를 3개로 제한하면 안 된다.
-- 단순한 라운드 간 1:1 swap은 CP-SAT의 탐색 운에 맡기지 않고 deterministic local search와 최종 sanity pass에서 직접 검사한다.
-- 예: R1 필요 196, R2 필요 200, 공격 216/200이면 조건이 동일할 때 `R1=200 / R2=216`이 되어야 한다.
-- 설화/아니스처럼 공유 니케가 여러 속성에 걸리면 다른 유저 대체까지 포함한 전역 교환을 허용한다.
-- Beam/local 결과는 완성된 실행 가능 hint로 CP-SAT에 전달한다. 모든 원래 후보는 모델에 남겨 큰 전역 교환을 허용한다.
-- CP-SAT 후 greedy로 공격을 덧붙이지 않는다.
-- 기본 전체 wall-clock은 30초다. `OPTIMAL` 증명은 보너스이며 제품 성공 조건이 아니다.
-- 30초가 되면 현재까지의 best-so-far를 반환한다.
-- GitHub Pages처럼 cross-origin isolation이 없는 경우 여러 독립 Web Worker/seed를 병렬 실행하고 최선 결과를 선택한다.
+## Initial-plan policy
 
-## 구현 및 검증 위치
+Use level-normalized per-element relative efficiency, HP fit, element supply/scarcity, shared-Nikke opportunity cost and attack availability to guide initial solutions. Avoid packing only the strongest attacks into early rounds; keeping strong + medium/smaller attacks mixed can improve later swap flexibility.
 
-- 운영 페이지: https://mu0767.github.io/union/planner.html
-- 계산 경로: `planner.js` → `planner-optimizer-ui.js` → `planner-cpsat-worker.js` → `planner-hybrid-engine-v2.js`.
-- 상세 알고리즘: `OPTIMIZER_DESIGN.md`.
-- 회귀 검증:
-  - `verify-planner-objectives.mjs`
-  - `verify-planner-global-optimization.mjs`
-- 회귀에는 최소한 다음을 포함한다.
-  - 마지막 도달 라운드/최종보스의 의미 있는 딜 증가가 앞 라운드의 작은 오버딜보다 우선하는 사례.
-  - 10억 허용선 안에서 더 적은 딜로 앞 라운드를 정리하는 사례.
-  - 공유 니케를 다른 속성에 보존해야 전체 진행이 좋아지는 전역 교환 사례.
-  - R1 216 / R2 200 obvious swap 사례.
-- 로컬 수정, 커밋, CI 성공, GitHub Pages 반영을 구분해서 보고한다.
+A good initial solution must be fully feasible with attacks-left and per-user Nikke non-reuse constraints. It is a hint, not a fixed assignment.
+
+## Required global behavior
+
+Always allow cross-round/cross-user restructuring when it improves the global result. Obvious cases such as placing a 216 attack in R1 with 20 waste while a compatible 200 attack is in R2 must be removable by deterministic cleanup rather than relying only on CP-SAT discovery.
+
+Shared-Nikke opportunity cost matters. Example regression: if 설화's water/fire parties share 아니스 and another user can cover fire, the optimizer must be able to choose 설화-water + other-fire instead of locally locking 설화-fire.
+
+## Regression cases
+
+Do not regress these cases:
+- Normal boss clear tolerance: <= 1B HP remaining counts as clear.
+- Fire overkill fixture: after 134,146,924,370 prior damage into 150,841,813,600 HP, prefer 15,990,954,991 over 20,304,443,028 when the former clears under tolerance.
+- Shared-Nikke global swap fixture (설화/아니스).
+- Cross-round 216/200 swap fixture.
+- Small target values must not use a coarse tolerance large enough to erase the whole target.
+
+## Tests and deployment
+
+The Pages workflow must run and pass:
+- `verify-planner-objectives.mjs`
+- `verify-planner-global-optimization.mjs`
+
+A failed optimizer regression must block deployment. Do not claim a change is deployed until the latest GitHub Pages workflow for the latest commit has completed successfully.
+
+## Keep the repository current
+
+Do not restore retired Python solver/server, Google Apps Script, old optimizer engines or duplicate handoff/design documents. Current implementation and policy belong in the runtime files, this file, and `README.md` only.
