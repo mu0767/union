@@ -272,16 +272,22 @@ async function solveRaid(state, progress = () => {}) {
     nikkes.forEach(n=>used.get(r.userId).add(n)); add(actual,b.id,r.damage);add(resultCount,r.userId,1);
   }
   function windowsFor(user) {
+    // The timetable is display/planning data, not a live reservation clock.
+    // Availability 05:00-05:00 means all day. Build windows directly from
+    // raid-relative clock minutes so early slots (05:00, 10:00, ...) are usable.
     const windows=[];
-    const day=new Date(origin);day.setHours(5,0,0,0);day.setDate(day.getDate()-1);
-    for(;day<=end;day.setDate(day.getDate()+1))for(const w of user.availability||[]) {
-      const parse=v=>{if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(v))throw Error(`${user.name}: 가능 시간 형식을 확인해 주세요.`);return v.split(':').map(Number);};
-      const [sh,sm]=parse(w.start),[eh,em]=parse(w.end);
-      const a=new Date(day),b=new Date(day);a.setMinutes(a.getMinutes()+((sh-5+24)%24)*60+sm);b.setMinutes(b.getMinutes()+((eh-5+24)%24)*60+em);if(b<=a)b.setDate(b.getDate()+1);
-      // The timetable is a planning view, so include the whole raid window.
-      // Do not cut off earlier time slots just because the page is opened later.
-      const first=Math.max(0,Math.ceil((a-origin)/60000)),last=Math.min(horizon-duration,Math.floor((b-origin)/60000)-duration);
-      if(first<=last)windows.push([first,last]);
+    const parse=v=>{if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(v))throw Error(`${user.name}: 가능 시간 형식을 확인해 주세요.`);const [h,m]=v.split(':').map(Number);return h*60+m;};
+    for(const w of user.availability||[]) {
+      const start=parse(w.start), finish=parse(w.end);
+      for(let day=0;day<=Math.ceil(horizon/1440);day++){
+        let a=day*1440+start, b=day*1440+finish;
+        if(finish<=start)b+=1440;
+        // Convert absolute clock-of-day to offset from the raid start clock.
+        const originClock=origin.getHours()*60+origin.getMinutes();
+        a-=originClock;b-=originClock;
+        const first=Math.max(0,a),last=Math.min(horizon-duration,b-duration);
+        if(first<=last)windows.push([first,last]);
+      }
     }
     return windows;
   }
