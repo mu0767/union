@@ -53,6 +53,36 @@ function parseDeal(text) {
 }
 const $ = id => document.getElementById(id);
 const format = value => value === null ? '미보유' : value.toLocaleString('ko-KR');
+function levelAttackPower(level){
+  const table=window.LEVEL_ATTACK_POWER||{};
+  const keys=Object.keys(table).map(Number).sort((a,b)=>a-b);
+  const base=[...keys].reverse().find(v=>v<=Number(level));
+  return base==null?null:Number(table[base]);
+}
+function normalizedDamage(level,damage){
+  const atk=levelAttackPower(level);
+  return atk&&damage!=null?Number(damage)/atk:null;
+}
+function median(values){
+  const xs=values.filter(Number.isFinite).sort((a,b)=>a-b);
+  if(!xs.length)return null;
+  const m=Math.floor(xs.length/2);
+  return xs.length%2?xs[m]:(xs[m-1]+xs[m])/2;
+}
+function stageMedian(stageIndex){
+  return median(people.flatMap(p=>p.stages[stageIndex].squads.map(s=>normalizedDamage(p.level,scaledDamage(s.damage,stageIndex))).filter(v=>v!=null)));
+}
+function damagePercent(person,stageIndex,damage){
+  const value=normalizedDamage(person.level,scaledDamage(damage,stageIndex));
+  const med=stageMedian(stageIndex);
+  return value!=null&&med?Math.round(value/med*100):null;
+}
+function formatDamageWithPercent(person,stageIndex,damage){
+  const scaled=scaledDamage(damage,stageIndex);
+  if(scaled==null)return '미보유';
+  const pct=damagePercent(person,stageIndex,damage);
+  return `${format(scaled)}${pct==null?'':` (${pct}%)`}`;
+}
 const escapeHTML = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let people = [];
 let selectedStage = 'all';
@@ -336,7 +366,7 @@ function render() {
   const rows = visiblePeople();
   $('count').textContent = `${rows.length}명`;
   $('table-head').innerHTML = `<tr><th scope="col">지휘관 / 싱크로</th>${stages.map(i => `<th scope="col">${escapeHTML(raidRounds[1][i].name)}<br><span>${raidLabel(i)} / 딜량</span></th>`).join('')}</tr>`;
-  $('table-body').innerHTML = rows.map(p => `<tr><td><button class="commander" data-person="${p.index}" aria-label="${escapeHTML(p.name)} 편성 상세"><span class="person-index">${String(p.index+1).padStart(2,'0')}</span>${escapeHTML(p.name)}</button><span class="level">Lv. ${p.level}</span></td>${stages.map(i => `<td>${p.stages[i].squads.map((s,j) => { const names = s.nikkes?.length ? s.nikkes : (splitTeam(s.team) || []).map(character => character.name); return `<button class="damage-line squad-trigger" data-squad="${p.index}:${i}:${j}" aria-label="${escapeHTML(p.name)} 덱 ${escapeHTML(s.deck || String(j+1))} 구성 보기"><span class="damage-value"><small>${escapeHTML(s.deck || String(j+1))}</small>${format(scaledDamage(s.damage, i))}</span><span class="inline-squad">${names.map(name => { const character = characters.find(item => item.name === name); return character ? `<img src="${escapeHTML(characterSrc(character))}" alt="${escapeHTML(name)}" title="${escapeHTML(name)}" loading="lazy" decoding="async">` : `<em title="${escapeHTML(name)}">${escapeHTML(name)}</em>`; }).join('')}</span></button>`; }).join('')}</td>`).join('')}</tr>`).join('');
+  $('table-body').innerHTML = rows.map(p => `<tr><td><button class="commander" data-person="${p.index}" aria-label="${escapeHTML(p.name)} 편성 상세"><span class="person-index">${String(p.index+1).padStart(2,'0')}</span>${escapeHTML(p.name)}</button><span class="level">Lv. ${p.level}</span></td>${stages.map(i => `<td>${p.stages[i].squads.map((s,j) => { const names = s.nikkes?.length ? s.nikkes : (splitTeam(s.team) || []).map(character => character.name); return `<button class="damage-line squad-trigger" data-squad="${p.index}:${i}:${j}" aria-label="${escapeHTML(p.name)} 덱 ${escapeHTML(s.deck || String(j+1))} 구성 보기"><span class="damage-value"><small>${escapeHTML(s.deck || String(j+1))}</small>${formatDamageWithPercent(p,i,s.damage)}</span><span class="inline-squad">${names.map(name => { const character = characters.find(item => item.name === name); return character ? `<img src="${escapeHTML(characterSrc(character))}" alt="${escapeHTML(name)}" title="${escapeHTML(name)}" loading="lazy" decoding="async">` : `<em title="${escapeHTML(name)}">${escapeHTML(name)}</em>`; }).join('')}</span></button>`; }).join('')}</td>`).join('')}</tr>`).join('');
   $('empty').hidden = rows.length > 0;
 }
 function renderStats() {
@@ -358,7 +388,7 @@ function showSquad(personIndex, stageIndex, squadIndex) {
   if (!squad) return;
   const nikkes = squad.nikkes?.length ? squad.nikkes : (splitTeam(squad.team) || []).map(character => character.name);
   $('detail-title').textContent = `${person.name} · ${raidLabel(stageIndex)} · 덱 ${squad.deck || squadIndex + 1}`;
-  $('detail-body').innerHTML = `<section class="detail-stage"><p class="boss-detail-hp">딜량 ${format(scaledDamage(squad.damage, stageIndex))}</p><div class="squad-character-list">${nikkes.map(name => { const character = characters.find(item => item.name === name); return `<article>${character ? `<img src="${escapeHTML(characterSrc(character))}" alt="${escapeHTML(name)}" loading="lazy" decoding="async">` : '<span class="portrait-placeholder">N</span>'}<strong>${escapeHTML(name)}</strong></article>`; }).join('')}</div>${squad.note ? `<p class="squad-note">${escapeHTML(squad.note)}</p>` : ''}</section>`;
+  $('detail-body').innerHTML = `<section class="detail-stage"><p class="boss-detail-hp">딜량 ${formatDamageWithPercent(person,stageIndex,squad.damage)}</p><div class="squad-character-list">${nikkes.map(name => { const character = characters.find(item => item.name === name); return `<article>${character ? `<img src="${escapeHTML(characterSrc(character))}" alt="${escapeHTML(name)}" loading="lazy" decoding="async">` : '<span class="portrait-placeholder">N</span>'}<strong>${escapeHTML(name)}</strong></article>`; }).join('')}</div>${squad.note ? `<p class="squad-note">${escapeHTML(squad.note)}</p>` : ''}</section>`;
   $('detail').showModal();
 }
 document.querySelectorAll('[data-stage]').forEach(button => button.addEventListener('click', () => {
