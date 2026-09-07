@@ -13,7 +13,7 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   const normal=bosses.filter(b=>[1,2,3].includes(b.round));
   const final=bosses.find(b=>b.round===4);
   const tolerance=state.settings?.damageTolerance??1_000_000_000;
-  const maxSeconds=Math.max(1,Math.min(300,Number(state.__solverMaxSeconds??state.settings?.solverMaxSeconds??300)||300));
+  const maxSeconds=Math.max(1,Math.min(60,Number(state.__solverMaxSeconds??state.settings?.solverMaxSeconds??60)||300));
   const seed=Math.max(1,Math.floor(Number(state.__solverSeed)||1));
   const hardware=Math.max(1,Math.floor(Number(globalThis.navigator?.hardwareConcurrency)||1));
   const attackPowerTable=state.__levelAttackPower||{};
