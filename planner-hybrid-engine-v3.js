@@ -22,6 +22,7 @@ export async function solveRaidHybrid(state,progress=()=>{}){
   }
   const remaining=b=>b.round===4?Infinity:Math.max(0,Number(b.hp||0)-(actual.get(b.id)||0));
   const required=b=>b.round===4?Infinity:Math.max(0,remaining(b)-tolerance);
+  const exactRequired=b=>b.round===4?Infinity:((actual.get(b.id)||0)>0?remaining(b):required(b));
 
   const candidateKey=c=>`${c.userId}|${c.partyId}|${c.bossId}`;
   const raw=[];
@@ -30,7 +31,7 @@ export async function solveRaidHybrid(state,progress=()=>{}){
     if(p.nikkes.some(n=>usedActual.get(u.id)?.has(n)))continue;
     for(const b of bosses){
       if(p.element!==b.element)continue;
-      if(b.round!==4&&required(b)<=0)continue;
+      if(b.round!==4&&exactRequired(b)<=0)continue;
       const damage=b.round===4?(p.finalDamage??p.normalDamage):p.normalDamage;
       if(!Number.isSafeInteger(damage)||damage<=0)continue;
       raw.push({userId:u.id,userName:u.name,partyId:p.id,partyName:p.name,nikkes:[...p.nikkes],bossId:b.id,bossName:b.name,round:b.round,element:b.element,damage});
@@ -52,6 +53,10 @@ export async function solveRaidHybrid(state,progress=()=>{}){
       for(const c of own)for(const n of c.nikkes){if(ns.has(n))return false;ns.add(n);}
     }
     const dmg=new Map(actual);for(const c of sel)add(dmg,c.bossId,c.damage);
+    for(const b of normal.filter(b=>(actual.get(b.id)||0)>0&&remaining(b)>0)){
+      const planned=sel.filter(c=>c.bossId===b.id).reduce((s,c)=>s+c.damage,0);
+      if(planned<remaining(b))return false;
+    }
     let stage=0;
     for(const r of [1,2,3]){if(normal.filter(b=>b.round===r).every(b=>(dmg.get(b.id)||0)>=Math.max(0,b.hp-tolerance)))stage=r;else break;}
     return sel.every(c=>c.round<=stage+1);
@@ -67,7 +72,7 @@ export async function solveRaidHybrid(state,progress=()=>{}){
     let waste=0;
     for(const b of normal.filter(b=>b.round<targetRound)){
       const d=sel.filter(c=>c.bossId===b.id).reduce((s,c)=>s+c.damage,0);
-      waste+=Math.max(0,d-required(b));
+      waste+=Math.max(0,d-exactRequired(b));
     }
     let over=0;
     for(const b of normal){const d=sel.filter(c=>c.bossId===b.id).reduce((s,c)=>s+c.damage,0);over+=Math.max(0,d-remaining(b));}
@@ -91,7 +96,7 @@ export async function solveRaidHybrid(state,progress=()=>{}){
     const pool=raw.filter(c=>c.element===element&&c.round===round&&!excludeKeys.has(candidateKey(c)));
     // Prefer HP-fitting / smaller attacks first; keep the neighborhood bounded.
     const b=bosses.find(x=>x.round===round&&x.element===element);
-    const need=b&&round!==4?required(b):0;
+    const need=b&&round!==4?exactRequired(b):0;
     return pool.sort((a,z)=>Math.abs(a.damage-need)-Math.abs(z.damage-need)||a.damage-z.damage).slice(0,18);
   };
 
@@ -148,6 +153,10 @@ export async function solveRaidHybrid(state,progress=()=>{}){
     }
   }
 
+  for(const b of normal.filter(b=>(actual.get(b.id)||0)>0&&remaining(b)>0)){
+    const planned=cur.filter(c=>c.bossId===b.id).reduce((s,c)=>s+c.damage,0);
+    if(planned<remaining(b))throw new Error(`${b.name} 실제 잔여 HP ${remaining(b).toLocaleString('ko-KR')} 마무리 공격이 최종 계획에서 누락되었습니다.`);
+  }
   const ev=evaluate(cur);
   const bossOrder=new Map(bosses.map((b,i)=>[b.id,i]));
   cur.sort((a,b)=>a.round-b.round||(bossOrder.get(a.bossId)-bossOrder.get(b.bossId))||a.userName.localeCompare(b.userName));
