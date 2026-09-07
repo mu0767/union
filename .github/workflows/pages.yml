@@ -54,6 +54,11 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Build Blablalink character catalog
         run: npm run build:characters
+      - name: Verify managed shared storage bundle
+        run: |
+          python build-shared-site.py
+          node verify-managed-store.mjs
+          rm -rf dist
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site
