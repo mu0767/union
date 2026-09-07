@@ -87,61 +87,31 @@ export async function solveRaid(state, api, progress = () => {}) {
     const flags=normal.filter(b=>b.round===round).map(b=>clear.get(b.id)),flag=model.newBoolVar(`round${round+1}`);
     for(const f of flags)model.add(flag.le(f));model.add(flag.ge(sum(flags).minus(flags.length-1)));opened.push(flag);
   }
-  const solver=new CpSolver();let best=null,allOptimal=true;
-  // A complete feasible hint prevents a time limit during presolve from losing
-  // every result. CP-SAT still improves the same lexicographic objectives.
-  if(!(state.locks||[]).length) {
-    const damage=new Map(actual),chars=new Map([...used].map(([u,n])=>[u,new Set(n)])),counts=new Map(),selected=[];
-    let clock=lower;
-    while(selected.length<users.reduce((s,u)=>s+u.attacksLeft,0)) {
-      const round=[1,2,3].find(r=>normal.some(b=>b.round===r&&(damage.get(b.id)||0)<b.hp))||4;
-      let pick=null;
-      for(const c of candidates) {
-        if(c.boss.round!==round||!c.damage||(counts.get(c.user.id)||0)>=c.user.attacksLeft||c.party.nikkes.some(n=>chars.get(c.user.id)?.has(n)))continue;
-        const hp=c.boss.round===4?Infinity:Math.max(0,c.boss.hp-(damage.get(c.boss.id)||0));if(!hp)continue;
-        const times=c.windows.map(([a,b])=>Math.max(a,clock)<=b?Math.max(a,clock):Infinity),minute=Math.min(...times);if(!Number.isFinite(minute))continue;
-        const score=c.boss.round===4?c.damage:Math.min(hp,c.damage)-Math.max(0,c.damage-hp)*0.01;
-        if(!pick||minute<pick.minute||minute===pick.minute&&score>pick.score)pick={...c,minute,score};
-      }
-      if(!pick)break;
-      selected.push(pick);clock=pick.minute+duration;add(counts,pick.user.id,1);add(damage,pick.boss.id,pick.damage);
-      if(!chars.has(pick.user.id))chars.set(pick.user.id,new Set());pick.party.nikkes.forEach(n=>chars.get(pick.user.id).add(n));
+  // Fast browser planner: use the already-built greedy feasible schedule immediately.
+  // The full CP-SAT model is intentionally skipped here because proving/improving
+  // optimality can take minutes in a browser for a 32-member raid.
+  progress('빠른 공격 계획 구성 중…');
+  const damage=new Map(actual),chars=new Map([...used].map(([u,n])=>[u,new Set(n)])),counts=new Map(),selected=[];
+  let clock=lower;
+  const attackLimit=users.reduce((sum,u)=>sum+u.attacksLeft,0);
+  while(selected.length<attackLimit) {
+    const round=[1,2,3].find(r=>normal.some(b=>b.round===r&&(damage.get(b.id)||0)<b.hp))||4;
+    let pick=null;
+    for(const c of candidates) {
+      if(c.boss.round!==round||!c.damage||(counts.get(c.user.id)||0)>=c.user.attacksLeft||c.party.nikkes.some(n=>chars.get(c.user.id)?.has(n)))continue;
+      const hp=c.boss.round===4?Infinity:Math.max(0,c.boss.hp-(damage.get(c.boss.id)||0));if(!hp)continue;
+      const times=c.windows.map(([a,b])=>Math.max(a,clock)<=b?Math.max(a,clock):Infinity),minute=Math.min(...times);if(!Number.isFinite(minute))continue;
+      const score=c.boss.round===4?c.damage:Math.min(hp,c.damage)-Math.max(0,c.damage-hp)*0.01;
+      if(!pick||minute<pick.minute||minute===pick.minute&&score>pick.score)pick={...c,minute,score};
     }
-    const stage=[1,2,3].filter(r=>normal.filter(b=>b.round===r).every(b=>(damage.get(b.id)||0)>=b.hp)).length;
-    best={stage,selected};
-    const values=model.proto().variables.map(v=>Number(v.domain[0]));
-    for(const c of candidates){const chosen=selected.find(p=>p.x.index===c.x.index);values[c.x.index]=chosen?1:0;values[c.start.index]=chosen?.minute??c.windows[0][0];values[c.finish.index]=chosen?chosen.minute+duration:0;}
-    for(const b of normal){const total=damage.get(b.id)||0;values[totals.get(b.id).index]=total;values[effective.get(b.id).index]=Math.min(total,b.hp);values[clear.get(b.id).index]=total>=b.hp?1:0;values[overkill.get(b.id).index]=Math.max(0,total-b.hp);values[clearTime.get(b.id).index]=Math.max(0,...selected.filter(c=>c.boss.id===b.id).map(c=>c.minute+duration));}
-    opened.forEach((v,i)=>values[v.index]=normal.filter(b=>b.round===i+1).every(b=>(damage.get(b.id)||0)>=b.hp)?1:0);
-    model.proto().solutionHint={vars:values.map((_,i)=>i),values};
+    if(!pick)break;
+    selected.push(pick);clock=pick.minute+duration;add(counts,pick.user.id,1);add(damage,pick.boss.id,pick.damage);
+    if(!chars.has(pick.user.id))chars.set(pick.user.id,new Set());pick.party.nikkes.forEach(n=>chars.get(pick.user.id).add(n));
   }
-  const stages=sum(opened);
-  function capture(){return {stage:Math.round(solver.value(stages)),selected:candidates.filter(c=>solver.booleanValue(c.x)).map(c=>({...c,minute:solver.value(c.start)}))};}
-  async function optimize(objective,maximize,label,seconds) {
-    progress(label);if(maximize)model.maximize(objective);else model.minimize(objective);
-    const status=solver.statusName(await solver.solve(model,{maxTimeInSeconds:seconds,numSearchWorkers:1}));
-    console.info('CP-SAT',label,status,solver.wallTime);
-    if(status==='MODEL_INVALID')throw Error('계산 모델 검증에 실패했습니다. 입력한 날짜와 딜량을 확인해 주세요.');
-    if(status!=='OPTIMAL')allOptimal=false;
-    if(!['OPTIMAL','FEASIBLE'].includes(status)) {
-      if(best)return false;
-      throw Error(status==='INFEASIBLE'?'현재 잠금과 가능 시간으로 실행 가능한 계획이 없습니다.':`계획을 찾지 못했습니다 (${status}). 잠금과 남은 시간을 확인해 주세요.`);
-    }
-    best=capture();
-    const optimum=Math.round(solver.value(objective));model.add(LinearExpr.from(objective).eq(optimum));
-    // Seed later objectives with the last valid assignment; never read an UNKNOWN response.
-    const values=solver.response().solution;
-    model.proto().solutionHint={vars:values.map((_,i)=>i),values:[...values]};
-    return true;
-  }
-  const solved=await optimize(stages,true,'도달 가능한 라운드 계산 중…',5);
-  const secondary=best.stage===3?sum((byBoss.get(final.id)||[]).map(c=>c.x.times(c.damage))):sum(normal.filter(b=>b.round===best.stage+1).map(b=>effective.get(b.id)));
-  if(solved && await optimize(secondary,true,'남은 공격의 딜량 최적화 중…',7)) {
-    if(await optimize(sum([...overkill.values()]),false,'오버딜을 줄이는 중…',3)) {
-      const starts=candidates.map((c,i)=>{const value=model.newIntVar(0,horizon,`scheduled${i}`);model.addMultiplicationEquality(value,[c.start,c.x]);return value;});
-      await optimize(sum(starts),false,'공격 시간 정리 중…',2);
-    }
-  }
+  const stage=[1,2,3].filter(r=>normal.filter(b=>b.round===r).every(b=>(damage.get(b.id)||0)>=b.hp)).length;
+  const best={stage,selected};
+  const allOptimal=false;
+  progress('공격 순서와 시간 정리 중…');
   const remaining=new Map(bosses.map(b=>[b.id,b.round===4?'infinite':Math.max(0,b.hp-(actual.get(b.id)||0))])),counts=new Map();
   const pad=n=>String(n).padStart(2,'0'),iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const attacks=best.selected.sort((a,b)=>a.minute-b.minute||a.boss.round-b.boss.round||a.boss.name.localeCompare(b.boss.name)).map(c=>{
