@@ -229,7 +229,16 @@ function renderPlan(plan,target=$('plan-list')){
     </button>`;
   };
 
-  const ordered=[...plan].sort((a,b)=>a.round-b.round||a.attackNumber-b.attackNumber||a.userName.localeCompare(b.userName));
+  // Within each round/boss, keep completed attacks above scheduled attacks.
+  // This makes the board read as history first, then the remaining plan.
+  const bossOrder=new Map(state.bosses.map((b,i)=>[b.id,i]));
+  const ordered=[...plan].sort((a,b)=>
+    a.round-b.round||
+    (bossOrder.get(a.bossId)??999)-(bossOrder.get(b.bossId)??999)||
+    Number(!a.completed)-Number(!b.completed)||
+    a.attackNumber-b.attackNumber||
+    a.userName.localeCompare(b.userName)
+  );
   const rounds=[...new Set(ordered.map(a=>a.round))].sort((a,b)=>a-b);
   target.innerHTML=rounds.map(round=>{
       const attacks=ordered.filter(a=>a.round===round);
