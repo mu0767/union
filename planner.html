@@ -33,7 +33,8 @@
     </section>
 
     <section id="view-theory" class="planner-view" hidden>
-      <div class="section-title"><div><p class="eyebrow">THEORETICAL PLAN</p><h2>최적 공격 계획</h2></div><div><select id="plan-group"><option value="time">시간대별</option><option value="boss">보스별</option><option value="user">유저별</option></select><button id="calculate" class="primary">최적 계획 계산</button></div></div>
+      <div class="section-title"><div><p class="eyebrow">THEORETICAL PLAN</p><h2>최적 공격 계획</h2></div><div><button id="calculate" class="primary">최적 계획 계산</button></div></div>
+      <div class="time-slot-settings"><label>표시 시간대 <span class="help">쉼표로 구분: 05:00-10:00, 10:00-15:00, 15:00-20:00, 20:00-05:00</span><input id="plan-time-slots" value="05:00-10:00, 10:00-15:00, 15:00-20:00, 20:00-05:00"></label></div>
       <div id="plan-summary" class="summary-grid"></div><div id="plan-list" class="plan-list empty-card">계산 버튼을 누르면 운영 계획이 표시됩니다.</div>
     </section>
 
