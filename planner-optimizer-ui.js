@@ -50,11 +50,11 @@
     });
     const snapshot=JSON.stringify({...state,plan:null});
     const started=Date.now();
-    const wallBudgetMs=30000;
+    const wallBudgetMs=5000;
     const deadline=started+wallBudgetMs;
-    let phase='30초 실전 최적화 준비 중…';
+    let phase='5초 테스트 최적화 준비 중…';
     const updateStatus=()=>{
-      const elapsed=Math.min(30,Math.floor((Date.now()-started)/1000));
+      const elapsed=Math.min(5,Math.floor((Date.now()-started)/1000));
       $('planner-status').textContent=`[${elapsed}초] ${phase}`;
     };
     updateStatus();
@@ -77,7 +77,7 @@
           resolved=true;
           workers.forEach(worker=>worker.terminate());
           if(best)resolve(best);
-          else reject(new Error('30초 실전 최적화 제한 시간 안에 실행 가능한 해를 찾지 못했습니다.'));
+          else reject(new Error('5초 테스트 최적화 제한 시간 안에 실행 가능한 해를 찾지 못했습니다.'));
         };
         const hardTimeout=setTimeout(expire,Math.max(1,deadline-Date.now()));
         const deadlineGuard=setInterval(()=>{if(Date.now()>=deadline)expire();},100);
@@ -117,7 +117,7 @@
           worker.onerror=()=>{failed++;finishOne();};
           const input=JSON.parse(snapshot);
           input.__solverSeed=index+1;
-          // 30 seconds is the wall-clock budget for the whole calculation, including
+          // 5 seconds is the temporary test wall-clock budget for the whole calculation, including
           // WASM/module startup. Never give each worker a fresh per-phase budget.
           input.__solverMaxSeconds=Math.max(1,Math.floor((deadline-Date.now())/1000));
           input.__levelAttackPower=window.LEVEL_ATTACK_POWER||{};
