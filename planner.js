@@ -190,6 +190,9 @@ function formatPlannerDamage(userId,element,damage,round=1){
   const percent=attackPower&&median?Math.round(damage/attackPower/median*100):null;
   return `${displayNumber(damage)}${percent==null?'':` <span class="damage-efficiency" title="레벨별 공격력으로 보정한 딜 · 같은 속성 중앙값 100%">(${percent}%)</span>`}`;
 }
+function planResultForAttack(attack){
+  return state.results.find(r=>r.userId===attack.userId&&r.partyId===attack.partyId&&r.bossId===attack.bossId)||null;
+}
 function renderPlan(plan,target=$('plan-list')){
   if(!plan?.length){target.className='plan-list empty-card';target.innerHTML='표시할 추천 공격이 없습니다.';return}
   target.className='plan-list';
@@ -207,11 +210,13 @@ function renderPlan(plan,target=$('plan-list')){
   const attackCard=a=>{
     const idx=state.plan?.attacks?.indexOf(a)??-1;
     const portraits=a.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
-    return `<button class="raid-slot-card" data-plan-index="${idx}">
-      <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong></div>
+    const result=planResultForAttack(a);
+    return `<button class="raid-slot-card${result?' completed':''}" data-plan-index="${idx}">
+      <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong>${result?'<span class="raid-slot-done">완료</span>':''}</div>
       <div class="raid-slot-portraits">${portraits}</div>
-      <small>${a.attackNumber}타</small>
-      <b>${formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</b>
+      <small>${a.attackNumber}타${result?' · 실제 딜':''}</small>
+      <b>${result?displayNumber(result.damage):formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</b>
+      ${result?`<em>예상 ${displayNumber(a.damage)}</em>`:''}
     </button>`;
   };
 
@@ -235,17 +240,17 @@ function renderPlan(plan,target=$('plan-list')){
       const cumulativeAttacks=slotBuckets.slice(0,slotIndex+1).flat();
       const remaining=bosses.map(b=>{
         if(b.hp==='infinite')return '∞';
-        const planned=cumulativeAttacks.filter(a=>a.bossId===b.id).reduce((s,a)=>s+a.damage,0);
+        const planned=cumulativeAttacks.filter(a=>a.bossId===b.id&&!planResultForAttack(a)).reduce((s,a)=>s+a.damage,0);
         return displayNumber(Math.max(0,b.hp-(baseDamage[b.id]||0)-planned));
       });
       const overkill=bosses.map(b=>{
         if(b.hp==='infinite')return '0';
-        const planned=cumulativeAttacks.filter(a=>a.bossId===b.id).reduce((s,a)=>s+a.damage,0);
+        const planned=cumulativeAttacks.filter(a=>a.bossId===b.id&&!planResultForAttack(a)).reduce((s,a)=>s+a.damage,0);
         return displayNumber(Math.max(0,(baseDamage[b.id]||0)+planned-b.hp));
       });
       const alternatives=bosses.map(b=>{
         const attack=attacks.find(a=>a.bossId===b.id);
-        if(!attack)return [];
+        if(!attack||planResultForAttack(attack))return [];
         return alternativeCandidates(attack,slot);
       });
       return `<div class="raid-board-wrap"><div class="raid-round-label">R${round===4?'최종':round}</div><div class="raid-board" style="--cols:${bosses.length}">
@@ -476,20 +481,28 @@ function openAttackDetail(index){
   $('attack-detail-body').innerHTML=`
     <div class="attack-detail-current"><strong>이번 공격</strong><p>${formatPlannerDamage(attack.userId,attack.element,attack.damage,attack.round)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
     <div class="attack-detail-used"><strong>이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
-  const f=$('attack-actual-form');f.elements.attackIndex.value=String(index);f.elements.damage.value='';
+  const result=planResultForAttack(attack);
+  const f=$('attack-actual-form');f.elements.attackIndex.value=String(index);f.elements.damage.value=result?displayNumber(result.damage):'';
+  f.querySelector('button[type="submit"]').textContent=result?'실제 딜 수정':'실제 결과 저장';
   $('attack-detail-dialog').showModal();
 }
 async function saveActualFromPlan(index,damage){
   const attack=state.plan?.attacks?.[index];if(!attack)throw new Error('계획 공격을 찾을 수 없습니다.');
   const user=state.users.find(u=>u.id===attack.userId),party=user?.parties.find(p=>p.id===attack.partyId),boss=state.bosses.find(b=>b.id===attack.bossId);
   if(!user||!party||!boss)throw new Error('공격 정보를 찾을 수 없습니다.');
+  const existing=planResultForAttack(attack);
+  if(existing){
+    existing.damage=damage;existing.at=new Date().toISOString();
+    await saveShared('완료된 공격의 실제 딜을 수정했습니다.');renderAll();return;
+  }
   if(user.attacksLeft<=0)throw new Error('남은 공격권이 없습니다.');
   const progress=raidProgress();if(!progress.bosses.some(b=>b.id===boss.id&&!b.clear))throw new Error('현재 공격 가능한 보스가 아닙니다.');
   const used=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
   const overlap=party.nikkes.filter(n=>used.has(n));if(overlap.length)throw new Error(`이미 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);
   user.attacksLeft--;
   state.results.push({id:uid(),userId:user.id,userName:user.name,partyId:party.id,partyName:party.name,nikkes:[...party.nikkes],element:party.element,bossId:boss.id,bossName:boss.name,round:boss.round,damage,at:new Date().toISOString()});
-  state.plan=null;await saveShared('실제 공격 결과를 저장했습니다. 남은 계획을 다시 계산해 주세요.');renderAll();
+  state.locks=state.locks.filter(l=>!(l.userId===user.id&&l.partyId===party.id&&l.bossId===boss.id));
+  await saveShared('실제 공격 결과를 저장했습니다. 완료 셀로 표시했으며 공격권·사용 니케에도 반영했습니다.');renderAll();
 }
 
 async function calculate(){
