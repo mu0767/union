@@ -96,7 +96,8 @@ export async function solveRaidCpSat(state, progress = () => {}) {
   }
 
   const stageExpr=sum(clear);
-  const finalExpr=sum(candidates.filter(c=>c.boss.round===4).map(c=>c.x.times(c.damage)));
+  const finalCandidates=candidates.filter(c=>c.boss.round===4);
+  const finalExpr=sum(finalCandidates.map(c=>c.x.times(c.damage)));
   const startedAt=Date.now();
   const remainingSeconds=()=>Math.max(0,(maxSeconds*1000-(Date.now()-startedAt))/1000);
   const solvePhase=(label,objective,mode,limitSeconds=Infinity)=>{
@@ -118,82 +119,85 @@ export async function solveRaidCpSat(state, progress = () => {}) {
     for(const v of clear)model.addHint(v,result.value(v));
   };
 
-  // Keep part of the five-minute budget for cleanup. A good target-damage
-  // incumbent is not usable in practice if it contains hundreds of billions of
-  // avoidable normal-boss overkill.
-  const cleanupReserve=Math.min(60,Math.max(10,maxSeconds*0.20));
+  // The real raid has damage variance. Do not spend minutes proving a difference
+  // smaller than the user's accepted tolerance. Preserve a cleanup budget so a
+  // high-damage incumbent can never be returned with absurd normal-boss overkill.
+  const targetGranularity=Math.max(1,tolerance||1);
+  const cleanupReserve=Math.min(75,Math.max(20,maxSeconds*0.25));
   const stageBudget=Math.min(30,Math.max(5,maxSeconds*0.10));
   const optimization={stage:'SKIPPED',target:'SKIPPED',waste:'SKIPPED'};
 
-  let result=solvePhase('1/3 최대 도달 라운드 증명 중…',stageExpr,'max',stageBudget);
+  let result=solvePhase('1/3 최대 도달 라운드 탐색 중…',stageExpr,'max',stageBudget);
   if(!result||!feasible(result.status))throw new Error('CP-SAT이 실행 가능한 공격 계획을 찾지 못했습니다.');
   optimization.stage=statusText(result.status);
   const bestStage=Math.round(result.value(clear[0])+result.value(clear[1])+result.value(clear[2]));
   const targetRound=bestStage+1;
 
-  let targetExpr=null;
-  let targetValue=null;
-  if(remainingSeconds()>0.05){
-    // Even if the stage proof timed out, preserve the best stage found and spend
-    // the remaining budget improving the plan at that stage. The final status
-    // will remain FEASIBLE until the stage itself is proven OPTIMAL.
-    model.add(stageExpr.equals(bestStage));
-    hintFrom(result);
-    const targetVars=targetRound===4
-      ? candidates.filter(c=>c.boss.round===4)
-      : normal.filter(b=>b.round===targetRound).map(b=>effectiveByBoss.get(b.id));
-    targetExpr=targetRound===4?finalExpr:sum(targetVars);
-    targetValue=current=>Math.round(targetRound===4
-      ? targetVars.reduce((total,c)=>total+c.damage*current.value(c.x),0)
-      : targetVars.reduce((total,v)=>total+current.value(v),0));
+  // Lock the best stage found even if its optimality proof timed out. We still
+  // optimize the useful damage and clean up waste instead of returning a raw
+  // stage-search incumbent.
+  model.add(stageExpr.equals(bestStage));
+  hintFrom(result);
 
-    const targetBudget=Math.max(1,remainingSeconds()-cleanupReserve);
-    const targetResult=solvePhase(
-      targetRound===4?'2/3 최종보스 딜 최적화 중…':`2/3 R${targetRound} 유효 딜 최적화 중…`,
-      targetExpr,'max',targetBudget
-    );
-    if(targetResult&&feasible(targetResult.status)){
-      result=targetResult;
-      optimization.target=statusText(targetResult.status);
-    }
+  const targetVars=targetRound===4
+    ? finalCandidates
+    : normal.filter(b=>b.round===targetRound).map(b=>effectiveByBoss.get(b.id));
+  const targetExpr=targetRound===4?finalExpr:sum(targetVars);
+  const targetMax=targetRound===4
+    ? finalCandidates.reduce((total,c)=>total+c.damage,0)
+    : normal.filter(b=>b.round===targetRound).reduce((total,b)=>total+actualRemaining(b),0);
+  const maxBand=Math.max(0,Math.floor(targetMax/targetGranularity));
+  const targetBand=model.newIntVar(0,maxBand,'target_band');
+  model.add(targetExpr.ge(targetBand.times(targetGranularity)));
+
+  // Maximize damage by tolerance-sized bands. Two plans inside the same band are
+  // practically equivalent, so cleanup/resource efficiency decides between them.
+  const targetBudget=Math.max(1,remainingSeconds()-cleanupReserve);
+  const targetResult=solvePhase(
+    targetRound===4?'2/3 최종보스 딜 구간 최적화 중…':`2/3 R${targetRound} 유효 딜 구간 최적화 중…`,
+    targetBand,'max',targetBudget
+  );
+  if(targetResult&&feasible(targetResult.status)){
+    result=targetResult;
+    optimization.target=statusText(targetResult.status);
+  }else{
+    throw new Error('목표 딜 최적화에서 실행 가능한 해를 유지하지 못했습니다.');
   }
 
-  // Always clean up the incumbent, even when target optimality was not proven.
-  // Lock the best target value found so cleanup can never reduce the primary
-  // objective just to make the normal rounds prettier.
-  let planningWaste=null;
-  if(targetExpr&&targetValue&&feasible(result.status)&&remainingSeconds()>0.05){
-    const bestTarget=targetValue(result);
-    model.add(targetExpr.equals(bestTarget));
-    hintFrom(result);
+  // Always reserve time for cleanup. Freeze only the best practical damage band,
+  // not the exact raw damage, so a slightly smaller but much more efficient plan
+  // wins when the difference is within the accepted tolerance.
+  const bestBand=Math.round(result.value(targetBand));
+  model.add(targetBand.equals(bestBand));
+  hintFrom(result);
 
-    const wasteVars=[];
-    for(const boss of normal){
-      if(boss.round>targetRound)continue;
-      const expr=assignedByBoss.get(boss.id);
-      const vars=candidates.filter(c=>c.boss.id===boss.id);
-      const maxAssigned=vars.reduce((s,c)=>s+c.damage,0);
-      if(!maxAssigned)continue;
-      // Every cleared normal round only needs HP - tolerance. On the last reached
-      // normal round, useful damage is allowed up to true remaining HP because
-      // that round's damage is the primary target when the final boss is unreachable.
-      const baseline=boss.round<targetRound?clearThreshold(boss):actualRemaining(boss);
-      const waste=model.newIntVar(0,Math.max(0,maxAssigned-baseline),'waste_'+boss.id);
-      model.add(waste.ge(expr.minus(baseline)));
-      wasteVars.push(waste);
-    }
-    if(wasteVars.length){
-      const wasteExpr=sum(wasteVars);
-      const wasteResult=solvePhase('3/3 현재 목표딜 유지 · 낭비 딜 정리 중…',wasteExpr,'min');
-      if(wasteResult&&feasible(wasteResult.status)){
-        result=wasteResult;
-        optimization.waste=statusText(wasteResult.status);
-        planningWaste=Math.round(wasteVars.reduce((total,v)=>total+wasteResult.value(v),0));
-      }
+  const wasteVars=[];
+  for(const boss of normal){
+    if(boss.round>targetRound)continue;
+    const expr=assignedByBoss.get(boss.id);
+    const vars=candidates.filter(c=>c.boss.id===boss.id);
+    const maxAssigned=vars.reduce((s,c)=>s+c.damage,0);
+    if(!maxAssigned)continue;
+    const baseline=boss.round<targetRound?clearThreshold(boss):actualRemaining(boss);
+    const waste=model.newIntVar(0,Math.max(0,maxAssigned-baseline),'waste_'+boss.id);
+    model.add(waste.ge(expr.minus(baseline)));
+    wasteVars.push(waste);
+  }
+
+  let planningWaste=0;
+  if(wasteVars.length){
+    const wasteExpr=sum(wasteVars);
+    const wasteResult=solvePhase('3/3 목표 구간 유지 · 낭비 딜 최소화 중…',wasteExpr,'min');
+    if(wasteResult&&feasible(wasteResult.status)){
+      result=wasteResult;
+      optimization.waste=statusText(wasteResult.status);
+      planningWaste=Math.round(wasteVars.reduce((total,v)=>total+wasteResult.value(v),0));
     }else{
-      optimization.waste='OPTIMAL';
-      planningWaste=0;
+      optimization.waste='UNKNOWN';
+      planningWaste=Math.round(wasteVars.reduce((total,v)=>total+result.value(v),0));
     }
+  }else{
+    optimization.waste='OPTIMAL';
   }
 
   progress('전역 최적화 결과 정리 중…');
@@ -233,13 +237,6 @@ export async function solveRaidCpSat(state, progress = () => {}) {
     const damage=chosen.filter(c=>c.boss.id===b.id).reduce((s,c)=>s+c.damage,0);
     return total+Math.min(hp,damage);
   },0);
-  if(planningWaste==null){
-    planningWaste=normal.filter(b=>b.round<=reachedRound).reduce((total,b)=>{
-      const damage=chosen.filter(c=>c.boss.id===b.id).reduce((s,c)=>s+c.damage,0);
-      const baseline=b.round<reachedRound?clearThreshold(b):actualRemaining(b);
-      return total+Math.max(0,damage-baseline);
-    },0);
-  }
   const provenOptimal=optimization.stage==='OPTIMAL'&&optimization.target==='OPTIMAL'&&optimization.waste==='OPTIMAL';
   return {
     status:provenOptimal?'OPTIMAL':'FEASIBLE',
@@ -250,6 +247,8 @@ export async function solveRaidCpSat(state, progress = () => {}) {
       totalOverkill:attacks.reduce((s,a)=>s+a.overkill,0),
       planningWaste,
       damageTolerance:tolerance,
+      targetGranularity,
+      targetBand:bestBand,
       unusedAttacks:users.reduce((s,u)=>s+u.attacksLeft,0)-attacks.length,
       targetRound:reachedRound,
       targetDamage,
