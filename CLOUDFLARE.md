@@ -2,7 +2,7 @@
 
 사이트와 API는 같은 Cloudflare Worker가 제공하고, 공유 데이터는 D1의 `shared_bosses` 테이블에 저장한다. 별도 설치형 서버는 필요 없다. 사이트 이용자는 로그인 없이 같은 데이터를 읽고 수정한다.
 
-현재 배포 주소: https://union.mu0767-union.workers.dev
+현재 배포 주소: https://union.union-raid.workers.dev
 
 ## 처음 설정
 

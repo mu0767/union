@@ -617,11 +617,10 @@ state=parseUnionRaidSeed();ensurePlanningSettings();selectedUser=null;renderAll(
 (async function showBuild(){
   const badge=$('build-badge');if(!badge)return;
   try{
-    const response=await fetch('https://api.github.com/repos/mu0767/union/commits/main',{cache:'no-store'});
+    const response=await fetch('./build-info.json',{cache:'no-store'});
     if(!response.ok)throw new Error();
-    const commit=await response.json(),sha=String(commit.sha||'').slice(0,7);
-    if(!sha)throw new Error();
-    badge.textContent=`build ${sha}`;
-    badge.href=`https://github.com/mu0767/union/commit/${commit.sha}`;
+    const build=await response.json();
+    if(!build.builtAt)throw new Error();
+    badge.textContent=`build ${new Date(build.builtAt).toLocaleString('ko-KR')}`;
   }catch{badge.textContent='build ?';}
 })();

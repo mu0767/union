@@ -25,6 +25,7 @@ catch (error) {
 await cp('assets', 'dist/client/assets', {recursive:true});
 await cp('vendor/cpsat', 'dist/client/vendor/cpsat', {recursive:true});
 await cp('vendor/build/portable', 'dist/client/vendor/build/portable', {recursive:true});
+await writeFile('dist/client/build-info.json', JSON.stringify({builtAt:new Date().toISOString()}));
 await writeFile('dist/client/_headers', `/*
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Embedder-Policy: require-corp
