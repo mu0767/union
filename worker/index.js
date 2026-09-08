@@ -74,7 +74,7 @@ async function handleApi(request, env) {
     const {value, done} = await reader.read();
     if (done) break;
     length += value.length;
-    if (length > 1500000) { await reader.cancel(); return json({error:'요청 크기 초과'}, 413); }
+    if (length > 16000) { await reader.cancel(); return json({error:'요청 크기 초과'}, 413); }
     chunks.push(value);
   }
   let body;
@@ -83,7 +83,9 @@ async function handleApi(request, env) {
   try {
     if (body?.action === 'save') return json(await saveChanges(env.DB, body.changes));
     if (body?.action === 'save-planner') {
-      const s=body.plannerState; validatePlanner(s);
+      const s=body.plannerState;
+      if(!s||s.v!==2||!Array.isArray(s.users)||s.users.length>32||!Array.isArray(s.bosses)||s.bosses.length!==16||!Array.isArray(s.results)||s.results.length>96) throw new Error('플래너 상태 형식 오류');
+      if(s.plan!==null&&s.plan!==undefined&&(!Array.isArray(s.plan.attacks)||s.plan.attacks.length>96)) throw new Error('플래너 계획 형식 오류');
       return json(await saveField(env.DB,'plannerState',s));
     }
     if (body?.action === 'save-multipliers') {
