@@ -7,3 +7,6 @@ dist/
 .sites-*
 blabla-*.html
 blabla-*.js
+.wrangler/
+.dev.vars
+.env
