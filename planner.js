@@ -142,7 +142,7 @@ async function plannerStoreRequest(action, plannerState) {
 }
 async function saveShared(message='') {
   localSave(message);
-  try{await plannerStoreRequest('save-planner',compactPlannerState());if(message)$('planner-status').textContent=message+' · 공유 저장 완료';}
+  try{const saved=await plannerStoreRequest('save-planner',compactPlannerState());sharedPlannerVersion=Number(saved.version)||sharedPlannerVersion;if(message)$('planner-status').textContent=message+' · 공유 저장 완료';}
   catch(error){$('planner-status').textContent=(message?message+' · ':'')+'공유 저장 실패: '+error.message;throw error;}
 }
 function availabilityText(user){return user.availability.map(w=>`${w.start}-${w.end}`).join(', ')}
@@ -689,6 +689,36 @@ $('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();
   }
 }catch(error){alert(error.message);}});
 
+let sharedPlannerVersion=0, sharedPlannerSyncTimer=null, sharedPlannerSyncing=false;
+async function fetchSharedPlannerVersion(){
+  const endpoint=window.UNION_SHARED_URL;if(!endpoint)return null;
+  const response=await fetch(endpoint+`?action=planner-version&t=${Date.now()}`,{cache:'no-store'});
+  const data=await response.json();if(!response.ok||data.error)throw new Error(data.error||`HTTP ${response.status}`);return Number(data.version)||0;
+}
+async function syncSharedPlanner(force=false){
+  if(sharedPlannerSyncing)return;
+  sharedPlannerSyncing=true;
+  try{
+    const version=await fetchSharedPlannerVersion();
+    if(!force&&version===sharedPlannerVersion)return;
+    const dialog=$('attack-detail-dialog'),dialogOpen=!!dialog?.open;
+    const resultId=dialogOpen?$('attack-actual-form')?.dataset.resultId:null;
+    const shared=await plannerStoreRequest('planner');
+    if(shared.plannerState){
+      state=expandPlannerState(shared.plannerState);
+      sharedPlannerVersion=Number(shared.version)||version||sharedPlannerVersion;
+      localSave();
+      renderAll();
+      if(dialogOpen&&resultId&&state.results.some(r=>r.id===resultId))openCompletedAttackDetail(resultId);
+    }
+  }catch{}
+  finally{sharedPlannerSyncing=false;}
+}
+function scheduleSharedPlannerSync(){
+  clearTimeout(sharedPlannerSyncTimer);
+  const delay=document.hidden?4000:1000;
+  sharedPlannerSyncTimer=setTimeout(async()=>{await syncSharedPlanner(false);scheduleSharedPlannerSync();},delay);
+}
 let transferredState = null;
 try { if (window.name.startsWith('union-planner-state:')) { transferredState = validateState(JSON.parse(window.name.slice('union-planner-state:'.length))); window.name = ''; } } catch { window.name = ''; }
 async function initializePlannerState(){
@@ -696,12 +726,15 @@ async function initializePlannerState(){
     if(transferredState)state=transferredState;
     else{
       const shared=await plannerStoreRequest('planner');
+      sharedPlannerVersion=Number(shared.version)||0;
       state=shared.plannerState?expandPlannerState(shared.plannerState):validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed());
     }
   }catch{
     try{state=validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed())}catch{state=parseUnionRaidSeed()}
   }
   ensurePlanningSettings();selectedUser=null;localSave();renderAll();
+  scheduleSharedPlannerSync();
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncSharedPlanner(true);scheduleSharedPlannerSync();});
   if(new URLSearchParams(location.search).get('calculate')==='1'){history.replaceState(null,'',location.pathname);setTimeout(()=>$('calculate')?.click(),0)}
 }
 initializePlannerState();
