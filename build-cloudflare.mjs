@@ -18,5 +18,7 @@ try { await copyFile('character-catalog.js','dist/client/character-catalog.js');
 catch(error){ if(error.code!=='ENOENT')throw error; await writeFile('dist/client/character-catalog.js','window.NIKKE_CHARACTER_CATALOG = window.NIKKE_CHARACTERS || [];\n');}
 await cp('assets','dist/client/assets',{recursive:true});
 await cp('vendor','dist/client/vendor',{recursive:true});
-await writeFile('dist/client/build-info.json',JSON.stringify({builtAt:new Date().toISOString()}));
+const commit=(process.env.GITHUB_SHA||'').trim();
+await writeFile('dist/client/build-info.json',JSON.stringify({builtAt:new Date().toISOString(),commit}));
+if (/^[0-9a-f]{40}$/i.test(commit)) await writeFile('dist/client/build.txt',commit+'\n');
 console.log('Cloudflare site built in dist/client');
