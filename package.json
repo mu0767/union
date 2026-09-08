@@ -14,6 +14,7 @@
     "dev:cloudflare": "wrangler dev",
     "deploy:cloudflare": "wrangler deploy",
     "db:local": "wrangler d1 execute union-db --local --file=worker/schema.sql",
-    "db:remote": "wrangler d1 execute union-db --remote --file=worker/schema.sql"
+    "db:remote": "wrangler d1 execute union-db --remote --file=worker/schema.sql",
+    "test:shared": "node --test verify-shared-state.mjs"
   }
 }
