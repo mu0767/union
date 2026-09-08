@@ -51,3 +51,10 @@
 .raid-board-manual .raid-board-cell{padding:5px}
 .manual-add-attack{width:100%;min-height:34px;border:1px dashed rgba(255,255,255,.2);border-radius:8px;background:transparent;color:#9ca7bd;font-size:11px;cursor:pointer}
 .manual-add-attack:hover{border-color:#7aa2ff;color:#c9d8ff;background:rgba(122,162,255,.07)}
+
+.raid-slot-stack{display:flex;flex-direction:column;gap:5px;height:100%}
+.raid-slot-stack>.raid-slot-card{position:relative;width:100%}
+.raid-slot-delete{position:absolute;top:4px;right:6px;z-index:3;width:20px;height:20px;border-radius:999px;display:grid;place-items:center;font-size:16px;line-height:1;color:#aeb6c7;background:rgba(8,10,15,.62);border:1px solid rgba(255,255,255,.12);pointer-events:auto}
+.raid-slot-delete:hover{color:#ff9b9b;background:rgba(122,32,38,.72);border-color:rgba(255,130,130,.45)}
+.raid-slot-add-below{width:100%;min-height:42px;border-radius:10px;border:1px dashed rgba(180,194,220,.20);background:rgba(255,255,255,.025);color:rgba(190,201,220,.52);font-size:24px;line-height:1;cursor:pointer}
+.raid-slot-add-below:hover{background:rgba(122,162,255,.07);border-color:rgba(122,162,255,.40);color:rgba(185,205,255,.9)}
