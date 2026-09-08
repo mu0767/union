@@ -83,6 +83,54 @@ function ensurePlanningSettings() {
   if (state.settings.simultaneous === '') state.settings.simultaneous = false;
 }
 function localSave(message='') { localStorage.setItem('union-planner-v2',JSON.stringify(state)); if(message) $('planner-status').textContent=message; }
+function compactPlannerState(){
+  const plan=state.plan?{
+    status:state.plan.status,
+    summary:state.plan.summary,
+    attacks:(state.plan.attacks||[]).map(a=>({
+      userName:a.userName||state.users.find(u=>u.id===a.userId)?.name,
+      partyName:a.partyName||state.users.find(u=>u.id===a.userId)?.parties.find(p=>p.id===a.partyId)?.name,
+      bossId:a.bossId,damage:a.damage,attackNumber:a.attackNumber,start:a.start
+    }))
+  }:null;
+  return {
+    v:2,
+    settings:state.settings,
+    bosses:state.bosses.map(b=>({id:b.id,round:b.round,name:b.name,element:b.element,hp:b.hp})),
+    users:state.users.map(u=>({name:u.name,active:u.active,attacksLeft:u.attacksLeft,availability:u.availability})),
+    results:state.results.map(r=>({
+      id:r.id,userName:r.userName||state.users.find(u=>u.id===r.userId)?.name,
+      partyName:r.partyName||state.users.find(u=>u.id===r.userId)?.parties.find(p=>p.id===r.partyId)?.name,
+      bossId:r.bossId,damage:r.damage,plannedDamage:r.plannedDamage,planStart:r.planStart,attackNumber:r.attackNumber,at:r.at
+    })),
+    plan
+  };
+}
+function expandPlannerState(saved){
+  if(!saved||saved.v!==2)return validateState(saved);
+  const next=parseUnionRaidSeed();
+  next.settings={...next.settings,...saved.settings};
+  if(Array.isArray(saved.bosses)&&saved.bosses.length===next.bosses.length)next.bosses=saved.bosses.map(b=>({...b}));
+  for(const su of saved.users||[]){
+    const u=next.users.find(x=>x.name===su.name);if(!u)continue;
+    u.active=su.active!==false;u.attacksLeft=Number.isInteger(su.attacksLeft)?su.attacksLeft:u.attacksLeft;
+    if(Array.isArray(su.availability))u.availability=su.availability;
+  }
+  next.results=(saved.results||[]).map(r=>{
+    const u=next.users.find(x=>x.name===r.userName),p=u?.parties.find(x=>x.name===r.partyName),b=next.bosses.find(x=>x.id===r.bossId);
+    if(!u||!p||!b)return null;
+    return {id:r.id||uid(),userId:u.id,userName:u.name,partyId:p.id,partyName:p.name,nikkes:[...p.nikkes],element:p.element,bossId:b.id,bossName:b.name,round:b.round,damage:Number(r.damage)||0,plannedDamage:r.plannedDamage,planStart:r.planStart,attackNumber:r.attackNumber,at:r.at};
+  }).filter(Boolean);
+  if(saved.plan){
+    const attacks=(saved.plan.attacks||[]).map(a=>{
+      const u=next.users.find(x=>x.name===a.userName),p=u?.parties.find(x=>x.name===a.partyName),b=next.bosses.find(x=>x.id===a.bossId);
+      if(!u||!p||!b)return null;
+      return {start:a.start,timeLabel:'',isNow:false,userId:u.id,userName:u.name,partyId:p.id,partyName:p.name,nikkes:[...p.nikkes],bossId:b.id,bossName:b.name,round:b.round,element:b.element,damage:Number(a.damage)||0,beforeHp:null,afterHp:null,overkill:0,attackNumber:a.attackNumber};
+    }).filter(Boolean);
+    next.plan={status:saved.plan.status||'FEASIBLE',summary:saved.plan.summary||{},attacks};
+  }
+  return validateState(next);
+}
 async function plannerStoreRequest(action, plannerState) {
   const endpoint=window.UNION_SHARED_URL;
   if(!endpoint)throw new Error('공유 저장소 주소가 없습니다.');
@@ -94,7 +142,7 @@ async function plannerStoreRequest(action, plannerState) {
 }
 async function saveShared(message='') {
   localSave(message);
-  try{await plannerStoreRequest('save-planner',state);if(message)$('planner-status').textContent=message+' · 공유 저장 완료';}
+  try{await plannerStoreRequest('save-planner',compactPlannerState());if(message)$('planner-status').textContent=message+' · 공유 저장 완료';}
   catch(error){$('planner-status').textContent=(message?message+' · ':'')+'공유 저장 실패: '+error.message;throw error;}
 }
 function availabilityText(user){return user.availability.map(w=>`${w.start}-${w.end}`).join(', ')}
@@ -648,7 +696,7 @@ async function initializePlannerState(){
     if(transferredState)state=transferredState;
     else{
       const shared=await plannerStoreRequest('planner');
-      state=shared.plannerState?validateState(shared.plannerState):validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed());
+      state=shared.plannerState?expandPlannerState(shared.plannerState):validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed());
     }
   }catch{
     try{state=validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed())}catch{state=parseUnionRaidSeed()}
