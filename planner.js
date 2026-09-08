@@ -281,13 +281,17 @@ function renderPlan(plan,target=$('plan-list')){
     const portraits=a.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
     const result=planResultForAttack(a);
     const attr=a.completed?`data-result-id="${escapeHTML(a.resultId)}"`:`data-plan-index="${idx}"`;
-    return `<button class="raid-slot-card${result?' completed':''}" ${attr}>
-      <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong>${result?'<span class="raid-slot-done">완료</span>':''}</div>
-      <div class="raid-slot-portraits">${portraits}</div>
-      <small>${a.attackNumber}타${result?' · 실제 딜':''}</small>
-      <b>${result?displayNumber(result.damage):formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</b>
-      ${result?`<em>예상 ${displayNumber(a.damage)}</em>`:''}
-    </button>`;
+    return `<div class="raid-slot-stack">
+      <button class="raid-slot-card${result?' completed':''}" ${attr}>
+        ${result?'':`<span class="raid-slot-delete" data-delete-plan-index="${idx}" title="예정 공격 삭제" aria-label="예정 공격 삭제">×</span>`}
+        <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong>${result?'<span class="raid-slot-done">완료</span>':''}</div>
+        <div class="raid-slot-portraits">${portraits}</div>
+        <small>${a.attackNumber}타${result?' · 실제 딜':''}</small>
+        <b>${result?displayNumber(result.damage):formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</b>
+        ${result?`<em>예상 ${displayNumber(a.damage)}</em>`:''}
+      </button>
+      ${result?'':`<button type="button" class="raid-slot-add-below" data-manual-add-boss="${escapeHTML(a.bossId)}" title="이 보스에 공격 추가">＋</button>`}
+    </div>`;
   };
 
   // Within each round/boss, keep completed attacks above scheduled attacks.
@@ -324,7 +328,6 @@ function renderPlan(plan,target=$('plan-list')){
       return `<div class="raid-board-wrap"><div class="raid-round-label">R${round===4?'최종':round}</div><div class="raid-board" style="--cols:${bosses.length}">
         <div class="raid-board-head"><span></span>${bosses.map(b=>`<strong>${escapeHTML(b.name)}<small>${escapeHTML(b.element)} · HP ${b.hp==='infinite'?'∞':displayNumber(b.hp)}</small></strong>`).join('')}</div>
         ${Array.from({length:rows},(_,row)=>`<div class="raid-board-row"><span class="raid-row-index">${row+1}</span>${bosses.map(b=>`<div class="raid-board-cell">${attacks.filter(a=>a.bossId===b.id)[row] ? attackCard(attacks.filter(a=>a.bossId===b.id)[row]) : ''}</div>`).join('')}</div>`).join('')}
-        <div class="raid-board-row raid-board-manual"><span class="raid-row-index">+</span>${bosses.map(b=>`<div class="raid-board-cell"><button type="button" class="manual-add-attack" data-manual-add-boss="${escapeHTML(b.id)}">＋ 공격 추가</button></div>`).join('')}</div>
         <div class="raid-board-footer"><span>남은 HP</span>${remaining.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-footer raid-board-overkill"><span>오버딜</span>${overkill.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-alts"><span>대체 후보</span>${alternatives.map(list=>`<div>${list.length?list.map(x=>`<button type="button" class="alt-candidate" title="${escapeHTML(x.party.name)} · ${x.party.nikkes.map(escapeHTML).join(' / ')}"><strong>${escapeHTML(x.user.name)}</strong><small>${formatPlannerDamage(x.user.id,x.party.element,x.damage,round)}</small></button>`).join(''):'<small class="no-alt">없음</small>'}</div>`).join('')}</div>
@@ -616,7 +619,7 @@ function openAttackDetail(index){
     <div class="attack-detail-current"><strong>예정 공격</strong><p>${formatPlannerDamage(attack.userId,attack.element,attack.damage,attack.round)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
     <form id="manual-plan-form" class="manual-plan-form" data-mode="edit" data-index="${index}" data-boss-id="${escapeHTML(boss.id)}">
       <label>플레이어 / 파티<select name="choice" required>${manualChoiceOptions(boss,index,attack.userId,attack.partyId)}</select></label>
-      <div class="manual-plan-actions"><button class="primary">계획 변경</button><button type="button" class="danger" data-delete-plan-index="${index}">예정 공격 삭제</button></div>
+      <div class="manual-plan-actions"><button class="primary">계획 변경</button></div>
     </form>
     <div class="attack-detail-used"><strong>이 플레이어가 완료 공격에서 이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
   const f=$('attack-actual-form');f.hidden=false;delete f.dataset.resultId;f.elements.attackIndex.value=String(index);f.elements.damage.value=displayNumber(attack.damage);
@@ -748,10 +751,14 @@ document.addEventListener('submit',async e=>{
 document.addEventListener('click',e=>{
   const add=e.target.closest('[data-manual-add-boss]');if(add){openManualAdd(add.dataset.manualAddBoss);return}
   const del=e.target.closest('[data-delete-plan-index]');if(del){
+    e.preventDefault();e.stopPropagation();
     const index=Number(del.dataset.deletePlanIndex),attack=state.plan?.attacks?.[index];
-    if(attack&&!planResultForAttack(attack)&&confirm(`${attack.userName}의 예정 공격을 삭제할까요?`)){
-      state.plan.attacks.splice(index,1);
-      saveManualPlan('예정 공격을 삭제했습니다.').then(()=>$('attack-detail-dialog').close()).catch(error=>alert(error.message));
+    if(attack&&!planResultForAttack(attack)){
+      const ok=confirm(`${attack.userName} · ${attack.partyName} 예정 공격을 삭제할까요?\n삭제 후 다른 기기에도 바로 반영됩니다.`);
+      if(ok){
+        state.plan.attacks.splice(index,1);
+        saveManualPlan('예정 공격을 삭제했습니다.').then(()=>{if($('attack-detail-dialog')?.open)$('attack-detail-dialog').close();}).catch(error=>alert(error.message));
+      }
     }
     return;
   }
