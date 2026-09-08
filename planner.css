@@ -58,3 +58,9 @@
 .raid-slot-delete:hover{color:#ff9b9b;background:rgba(122,32,38,.72);border-color:rgba(255,130,130,.45)}
 .raid-slot-add-below{width:100%;min-height:42px;border-radius:10px;border:1px dashed rgba(180,194,220,.20);background:rgba(255,255,255,.025);color:rgba(190,201,220,.52);font-size:24px;line-height:1;cursor:pointer}
 .raid-slot-add-below:hover{background:rgba(122,162,255,.07);border-color:rgba(122,162,255,.40);color:rgba(185,205,255,.9)}
+
+.used-nikke-portraits{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.used-nikke-portraits figure{margin:0;width:48px}
+.used-nikke-portraits img{width:48px;height:48px;object-fit:cover;border-radius:8px;opacity:.72;filter:saturate(.65)}
+.used-nikke-portraits figcaption{font-size:8px;line-height:1.1;margin-top:3px;color:#aeb6c7}
+.no-used-nikke{display:block;margin-top:6px;color:#7f899b;font-size:12px}
