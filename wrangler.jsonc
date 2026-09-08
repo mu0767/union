@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "union",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-08",
+  "build": { "command": "node build-cloudflare.mjs" },
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "union-db",
+    "database_id": "f8ec5499-657a-4239-b81b-1333d1a10034"
+  }]
+}

@@ -82,7 +82,32 @@ function ensurePlanningSettings() {
   if (state.settings.simultaneous === '') state.settings.simultaneous = false;
 }
 function localSave(message='') { localStorage.setItem('union-planner-v2',JSON.stringify(state)); if(message) $('planner-status').textContent=message; }
-async function saveShared(message='') { localSave(message); }
+let sharedDocument = null;
+let sharedSaving = false;
+async function saveShared(message='') {
+  if (!sharedDocument?.planner || sharedSaving) return false;
+  sharedSaving = true;
+  const draft = structuredClone(state);
+  try {
+    sharedDocument = await SharedState.save(sharedDocument.version, 'planner', draft);
+    state = validateState(sharedDocument.planner);
+    localSave(`${message} · 공유 저장 완료`);
+    return true;
+  } catch (error) {
+    localStorage.setItem('union-planner-unsaved', JSON.stringify(draft));
+    try { sharedDocument = await SharedState.load(); state = validateState(sharedDocument.planner); }
+    catch { sharedDocument = null; }
+    renderAll();
+    $('planner-status').textContent = `공유 저장 실패: ${error.message} 미저장 입력은 이 브라우저에 백업했습니다.`;
+    return false;
+  } finally { sharedSaving = false; }
+}
+for (const type of ['click','submit']) document.addEventListener(type, event => {
+  if ((!sharedDocument?.planner || sharedSaving) && event.target.closest('form, #calculate, #recalculate, #reset-plan, [data-remove-lock]')) {
+    event.preventDefault(); event.stopImmediatePropagation();
+    $('planner-status').textContent = sharedSaving ? '공유 저장 중입니다.' : '공유 연결을 확인한 뒤 새로고침해 주세요.';
+  }
+}, true);
 function availabilityText(user){return user.availability.map(w=>`${w.start}-${w.end}`).join(', ')}
 function parseAvailability(text){
   if(!text.trim())return [];
@@ -266,7 +291,7 @@ function renderSchedule(){
   try{renderPlan(plan.attacks)}catch(error){$('plan-list').className='plan-list empty-card';$('plan-list').textContent=`시간표 표시 실패: ${error.message}`;throw error}
 }
 function renderSettings(){const f=$('raid-settings');Object.entries(state.settings).forEach(([k,v])=>{if(f.elements[k])f.elements[k].value=String(v)});$('planner-boss-body').innerHTML=state.bosses.map(b=>`<tr data-boss-id="${b.id}"><td>${b.round===4?'최종':b.round}</td><td><input name="bossName" value="${escapeHTML(b.name)}" required maxlength="80"></td><td><select name="bossElement">${ELEMENTS.map(e=>`<option${e===b.element?' selected':''}>${e}</option>`).join('')}</select></td><td><input name="bossHp" inputmode="numeric" value="${b.hp==='infinite'?'무한':displayNumber(b.hp)}" required></td></tr>`).join('')}
-function renderAll(){renderLive();renderSchedule()}
+function renderAll(){renderLive();renderSchedule();renderSettings()}
 async function solveRaid(state, progress = () => {}) {
   const settings=state.settings || {}, duration=Number(settings.attackMinutes);
   const origin=new Date(settings.startAt), end=new Date(settings.endAt), now=new Date(settings.now);
@@ -489,7 +514,10 @@ async function saveActualFromPlan(index,damage){
   const overlap=party.nikkes.filter(n=>used.has(n));if(overlap.length)throw new Error(`이미 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);
   user.attacksLeft--;
   state.results.push({id:uid(),userId:user.id,userName:user.name,partyId:party.id,partyName:party.name,nikkes:[...party.nikkes],element:party.element,bossId:boss.id,bossName:boss.name,round:boss.round,damage,at:new Date().toISOString()});
-  state.plan=null;await saveShared('실제 공격 결과를 저장했습니다. 남은 계획을 다시 계산해 주세요.');renderAll();
+  state.locks=state.locks.filter(l=>!(l.userId===user.id&&l.partyId===party.id&&l.bossId===boss.id));
+  state.plan=null;
+  if (!await saveShared('실제 공격 결과를 저장했습니다. 남은 계획을 다시 계산해 주세요.')) throw new Error($('planner-status').textContent);
+  renderAll();
 }
 
 async function calculate(){
@@ -527,7 +555,7 @@ async function calculate(){
     state.plan=plan;
     renderSchedule();
     renderLive();
-    localSave(`CP-SAT 계산 완료 · ${plan.attacks.length}개 공격 · ${plan.summary.reachedFinal?'최종보스 딜':`R${plan.summary.reachedRound} 유효 딜`} ${displayNumber(plan.summary.targetDamage)} · 총 오버딜 ${displayNumber(plan.summary.totalOverkill)}`);
+    await saveShared(`CP-SAT 계산 완료 · ${plan.attacks.length}개 공격 · ${plan.summary.reachedFinal?'최종보스 딜':`R${plan.summary.reachedRound} 유효 딜`} ${displayNumber(plan.summary.targetDamage)} · 총 오버딜 ${displayNumber(plan.summary.totalOverkill)}`);
   }catch(error){
     $('planner-status').textContent=`계산 실패: ${error.message}`;
   }finally{
@@ -538,19 +566,19 @@ async function calculate(){
 }
 document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b===button));document.querySelectorAll('.planner-view').forEach(v=>v.hidden=v.id!==`view-${button.dataset.view}`)}));
 for(const id of ['result-form','lock-form'])$(id).elements.user.addEventListener('change',e=>updatePartySelect(e.target.form));
-$('result-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜을 정수로 입력해 주세요.');const user=state.users.find(u=>u.id===f.elements.user.value);if(!user||user.attacksLeft<=0)return alert('남은 공격권이 없습니다.');const party=user.parties.find(p=>p.id===f.elements.party.value);const boss=state.bosses.find(b=>b.id===f.elements.boss.value);const progress=raidProgress();if(!progress.bosses.some(b=>b.id===boss?.id&&!b.clear))return alert('현재 열린 라운드의 남은 보스만 공격할 수 있습니다.');if(!party||!boss||party.element!==boss.element)return alert('파티와 보스의 속성이 맞지 않습니다.');const used=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||user.parties.find(p=>p.id===r.partyId)?.nikkes||[]));const overlap=party.nikkes.filter(n=>used.has(n));if(overlap.length)return alert(`이미 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);user.attacksLeft--;state.results.push({id:uid(),userId:user.id,userName:user.name,partyId:party.id,partyName:party.name,nikkes:[...party.nikkes],element:party.element,bossId:boss.id,bossName:boss.name,round:boss.round,damage,at:new Date().toISOString()});state.locks=state.locks.filter(l=>!(l.userId===user.id&&l.partyId===party.id&&l.bossId===boss.id));state.plan=null;await saveShared('실제 결과와 공격권·사용 니케·보스 HP를 저장했습니다. 재계산 버튼을 누르면 새 계획을 만듭니다.');f.elements.damage.value='';renderAll()});
-$('lock-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.target;state.locks.push({id:uid(),userId:f.elements.user.value,partyId:f.elements.party.value,bossId:f.elements.boss.value});state.plan=null;await saveShared('공격을 잠갔습니다. 재계산 때 필수 제약으로 반영됩니다.');renderAll()});
-document.addEventListener('click',async e=>{const b=e.target.closest('[data-remove-lock]');if(b){state.locks=state.locks.filter(x=>x.id!==b.dataset.removeLock);state.plan=null;await saveShared('공격 잠금을 해제했습니다.');renderAll()}});
-$('raid-settings').addEventListener('submit',async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));if(new Date(values.startAt)>=new Date(values.endAt))return alert('종료 시각은 시작보다 늦어야 합니다.');const rows=[...$('planner-boss-body').querySelectorAll('tr')];try{state.bosses=rows.map((row,index)=>{const raw=row.querySelector('[name=bossHp]').value.trim();const final=index===rows.length-1;const hp=/^(무한|infinite|∞)$/i.test(raw)?'infinite':Number(raw.replace(/,/g,''));if((!final&&hp==='infinite')||(hp!=='infinite'&&(!Number.isSafeInteger(hp)||hp<=0)))throw new Error('일반 보스 HP는 0보다 큰 정수여야 합니다.');const prior=state.bosses.find(b=>b.id===row.dataset.bossId);return{...prior,name:row.querySelector('[name=bossName]').value.trim(),element:row.querySelector('[name=bossElement]').value,hp}});for(const round of [1,2,3])if(new Set(state.bosses.filter(b=>b.round===round).map(b=>b.element)).size!==5)throw new Error(`Round ${round}에는 5개 속성을 하나씩 선택해야 합니다.`)}catch(error){return alert(error.message)}state.settings={...values,attackMinutes:Number(values.attackMinutes),simultaneous:values.simultaneous==='true',finalElement:state.bosses.at(-1).element};state.plan=null;await saveShared('레이드와 보스 설정을 저장했습니다.');renderAll()});
+$('result-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜을 정수로 입력해 주세요.');const user=state.users.find(u=>u.id===f.elements.user.value);if(!user||user.attacksLeft<=0)return alert('남은 공격권이 없습니다.');const party=user.parties.find(p=>p.id===f.elements.party.value);const boss=state.bosses.find(b=>b.id===f.elements.boss.value);const progress=raidProgress();if(!progress.bosses.some(b=>b.id===boss?.id&&!b.clear))return alert('현재 열린 라운드의 남은 보스만 공격할 수 있습니다.');if(!party||!boss||party.element!==boss.element)return alert('파티와 보스의 속성이 맞지 않습니다.');const used=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||user.parties.find(p=>p.id===r.partyId)?.nikkes||[]));const overlap=party.nikkes.filter(n=>used.has(n));if(overlap.length)return alert(`이미 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);user.attacksLeft--;state.results.push({id:uid(),userId:user.id,userName:user.name,partyId:party.id,partyName:party.name,nikkes:[...party.nikkes],element:party.element,bossId:boss.id,bossName:boss.name,round:boss.round,damage,at:new Date().toISOString()});state.locks=state.locks.filter(l=>!(l.userId===user.id&&l.partyId===party.id&&l.bossId===boss.id));state.plan=null;if(!await saveShared('실제 결과와 공격권·사용 니케·보스 HP를 저장했습니다. 재계산 버튼을 누르면 새 계획을 만듭니다.'))return;f.elements.damage.value='';renderAll()});
+$('lock-form').addEventListener('submit',async e=>{e.preventDefault();const f=e.target;state.locks.push({id:uid(),userId:f.elements.user.value,partyId:f.elements.party.value,bossId:f.elements.boss.value});state.plan=null;if(!await saveShared('공격을 잠갔습니다. 재계산 때 필수 제약으로 반영됩니다.'))return;renderAll()});
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-remove-lock]');if(b){state.locks=state.locks.filter(x=>x.id!==b.dataset.removeLock);state.plan=null;if(!await saveShared('공격 잠금을 해제했습니다.'))return;renderAll()}});
+$('raid-settings').addEventListener('submit',async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));if(new Date(values.startAt)>=new Date(values.endAt))return alert('종료 시각은 시작보다 늦어야 합니다.');const rows=[...$('planner-boss-body').querySelectorAll('tr')];try{state.bosses=rows.map((row,index)=>{const raw=row.querySelector('[name=bossHp]').value.trim();const final=index===rows.length-1;const hp=/^(무한|infinite|∞)$/i.test(raw)?'infinite':Number(raw.replace(/,/g,''));if((!final&&hp==='infinite')||(hp!=='infinite'&&(!Number.isSafeInteger(hp)||hp<=0)))throw new Error('일반 보스 HP는 0보다 큰 정수여야 합니다.');const prior=state.bosses.find(b=>b.id===row.dataset.bossId);return{...prior,name:row.querySelector('[name=bossName]').value.trim(),element:row.querySelector('[name=bossElement]').value,hp}});for(const round of [1,2,3])if(new Set(state.bosses.filter(b=>b.round===round).map(b=>b.element)).size!==5)throw new Error(`Round ${round}에는 5개 속성을 하나씩 선택해야 합니다.`)}catch(error){return alert(error.message)}state.settings={...values,attackMinutes:Number(values.attackMinutes),simultaneous:values.simultaneous==='true',finalElement:state.bosses.at(-1).element};state.plan=null;if(!await saveShared('레이드와 보스 설정을 저장했습니다.'))return;renderAll()});
 $('calculate').addEventListener('click',calculate);$('recalculate').addEventListener('click',calculate);
-$('reset-plan')?.addEventListener('click',()=>{
+$('reset-plan')?.addEventListener('click',async ()=>{
   if(!confirm('입력 데이터, 실제 공격 결과, 공격 잠금, 계산된 시간표를 모두 초기화할까요?'))return;
   localStorage.removeItem('union-planner-v2');
-  state=parseUnionRaidSeed();
+  state=sharedSeed(sharedDocument);
   ensurePlanningSettings();
   selectedUser=null;
   renderAll();
-  localSave('전체 데이터를 초기화했습니다.');
+  await saveShared('전체 데이터를 초기화했습니다.');
 });
 $('plan-time-slots')?.addEventListener('change',()=>{renderSchedule();});
 document.addEventListener('click',e=>{const card=e.target.closest('[data-plan-index]');if(card)openAttackDetail(Number(card.dataset.planIndex));});
@@ -558,8 +586,33 @@ $('attack-detail-close')?.addEventListener('click',()=>$('attack-detail-dialog')
 $('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜량은 0 이상의 정수여야 합니다.');try{await saveActualFromPlan(Number(f.elements.attackIndex.value),damage);$('attack-detail-dialog').close();}catch(error){alert(error.message);}});
 let transferredState = null;
 try { if (window.name.startsWith('union-planner-state:')) { transferredState = validateState(JSON.parse(window.name.slice('union-planner-state:'.length))); window.name = ''; } } catch { window.name = ''; }
-try{state=transferredState||validateState(JSON.parse(localStorage.getItem('union-planner-v2'))||parseUnionRaidSeed())}catch{state=parseUnionRaidSeed()}ensurePlanningSettings();selectedUser=null;renderAll();
-if(new URLSearchParams(location.search).get('calculate')==='1'){history.replaceState(null,'',location.pathname);setTimeout(calculate,0)}
+function sharedSeed(store) {
+  window.UNION_RAID_TEXT = store.raidText || window.UNION_RAID_TEXT;
+  const seed = parseUnionRaidSeed();
+  seed.bosses = Object.entries(store.rounds).flatMap(([round,bosses]) => bosses.map((b,i) => ({...b,id:`shared-r${round}-${i}`,round:Number(round)})));
+  const order = ['철갑','수냉','작열','전격','풍압'];
+  for (const u of seed.users) for (const p of u.parties) {
+    p.baseDamage = p.normalDamage;
+    p.normalDamage = Math.round(p.baseDamage * (store.multipliers?.[order.indexOf(p.element)] ?? 1));
+  }
+  seed.settings.finalElement = seed.bosses.at(-1).element;
+  return seed;
+}
+state=parseUnionRaidSeed();ensurePlanningSettings();selectedUser=null;renderAll();
+(async () => {
+  try {
+    sharedDocument = await SharedState.load();
+    if (!sharedDocument.planner) {
+      const seed = sharedSeed(sharedDocument);
+      try { sharedDocument = await SharedState.save(sharedDocument.version, 'planner', seed); }
+      catch (error) { if (error.status !== 409) throw error; sharedDocument = await SharedState.load(); }
+    }
+    state = validateState(sharedDocument.planner);
+    window.UNION_RAID_TEXT = sharedDocument.raidText || window.UNION_RAID_TEXT;
+    ensurePlanningSettings();renderAll();localSave('공유 데이터를 불러왔습니다. 저장한 변경은 다른 기기에서 새로고침하면 반영됩니다.');
+    if(new URLSearchParams(location.search).get('calculate')==='1'){history.replaceState(null,'',location.pathname);calculate();}
+  } catch (error) { sharedDocument=null; $('planner-status').textContent=`공유 연결 실패: ${error.message}`; }
+})();
 
 (async function showBuild(){
   const badge=$('build-badge');if(!badge)return;

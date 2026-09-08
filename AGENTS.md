@@ -31,7 +31,10 @@
 
 ## 구현 및 검증 위치
 
-- 운영 페이지: https://mu0767.github.io/union/planner.html
+- 사용자 요청으로 Cloudflare Workers Static Assets + D1 공유 저장으로 전환했다. 배포 설정은 `wrangler.jsonc`, 절차는 `CLOUDFLARE.md`에 있다. 실제 배포 버전은 `PROJECT_STATUS.md`에서 확인한다.
+- 공유 범위는 딜량 기록·보스 정보·배율·계획·완료된 공격·실제 딜·사용 파티/니케·현재 HP·남은 공격권이다. 공격 결과와 공격권을 함께 저장하고 오래된 클라이언트가 다른 사람의 기록을 덮어쓰지 않도록 한다.
+
+- 운영 페이지: https://union.mu0767-union.workers.dev/planner.html (이전 GitHub Pages 주소: https://mu0767.github.io/union/planner.html).
 - 계산 경로: `planner.js` → `planner-cpsat-worker.js` → `planner-cpsat-engine.js`.
 - 목표에 대한 기준은 이 문서이며, 기존 코드의 목적함수 순서가 올바르다고 가정하지 않는다.
 - 회귀 검증에는 **오버딜은 더 크지만 마지막 도달 라운드/최종보스 딜이 더 큰 계획을 선택하는 사례**를 포함한다.

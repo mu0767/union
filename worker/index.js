@@ -1,4 +1,7 @@
-// Build injects ASSETS, INITIAL_STORE and the shared mergeBossChanges_ validator.
+import rounds from '../default-bosses.json';
+import { mergeBossChanges_ } from './boss-merge.js';
+import { updateShared, validatePlanner } from './shared-store.js';
+const INITIAL_STORE = {rounds, revisions:Object.fromEntries(Object.entries(rounds).map(([r, bosses]) => [r,bosses.map(() => 0)])), raidText:null, multipliers:[1,1,1,1,1], planner:null};
 const json = (value, status = 200) => new Response(JSON.stringify(value), {
   status, headers:{'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store'}
 });
@@ -14,6 +17,16 @@ async function saveChanges(db, changes) {
   for (let attempt = 0; attempt < 16; attempt++) {
     const current = await readStore(db);
     const next = mergeBossChanges_(current, changes);
+    if (next.planner && next.version !== current.version) {
+      for (const change of changes) {
+        const old = current.rounds[change.round][change.index];
+        const b = next.planner.bosses.find(b => b.id === `shared-r${change.round}-${change.index}`) || next.planner.bosses.find(b => b.round === change.round && b.element === old.element);
+        if (b) b[change.field] = change.value;
+      }
+      next.planner.plan = null;
+      next.planner.settings.finalElement = next.planner.bosses.find(b => b.round === 4).element;
+      validatePlanner(next.planner);
+    }
     if (next.version === current.version) return next;
     const {version, ...data} = next;
     const result = await db.prepare('UPDATE shared_bosses SET version = ?, data = ? WHERE id = 1 AND version = ?')
@@ -55,29 +68,49 @@ async function handleApi(request, env) {
   try { return json(await saveChanges(env.DB, body.changes)); }
   catch (error) { return json({error:error.message}, 409); }
 }
+async function handleState(request, env) {
+  if (!env.DB) return json({error:'D1 연결이 필요합니다.'}, 503);
+  if (request.method === 'GET') return json(await readStore(env.DB));
+  if (request.method !== 'POST') return json({error:'지원하지 않는 요청'},405);
+  const origin = request.headers.get('Origin');
+  if (origin && origin !== new URL(request.url).origin) return json({error:'다른 사이트의 요청입니다.'},403);
+  const reader = request.body?.getReader();
+  if (!reader) return json({error:'변경 내용이 없습니다.'},400);
+  let length=0; const chunks=[];
+  while (true) {
+    const {value,done}=await reader.read(); if(done)break;
+    length+=value.length;
+    if(length>1500000){await reader.cancel();return json({error:'요청 크기 초과'},413);}
+    chunks.push(value);
+  }
+  let body;
+  try { body=JSON.parse(await new Blob(chunks).text()); }
+  catch { return json({error:'JSON 형식 오류'},400); }
+  if (!body || !Number.isSafeInteger(body.version) || typeof body.mutationId !== 'string' || !body.mutationId || body.mutationId.length > 100) return json({error:'저장 요청 형식 오류'},400);
+  const current=await readStore(env.DB);
+  if ((current.mutations || []).includes(body.mutationId)) return json(current);
+  if (body.version !== current.version) return json({error:'다른 사용자가 먼저 저장했습니다. 최신 화면에서 다시 입력해 주세요.'},409);
+  let next;
+  try { next=updateShared(current,body.key,body.value); }
+  catch(error){return json({error:error.message},400);}
+  next.mutations=[...(current.mutations||[]).slice(-49),body.mutationId];
+  const {version,...data}=next;
+  const result=await env.DB.prepare('UPDATE shared_bosses SET version = ?, data = ? WHERE id = 1 AND version = ?')
+    .bind(version,JSON.stringify(data),current.version).run();
+  if(result.meta.changes!==1)return json({error:'다른 사용자가 먼저 저장했습니다. 최신 화면에서 다시 입력해 주세요.'},409);
+  return json(next);
+}
 export default {
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
     try {
       if (path === '/api/shared-bosses') return await handleApi(request, env);
-      if (path.startsWith('/vendor/')) {
-        const response=await env.ASSETS.fetch(request);
-        const headers=new Headers(response.headers);
-        headers.set('Cross-Origin-Resource-Policy','same-origin');
-        return new Response(response.body,{status:response.status,headers});
-      }
-      if (!['GET','HEAD'].includes(request.method)) return new Response('Method not allowed', {status:405});
-      const asset = ASSETS[path === '/' ? '/index.html' : path];
-      if (!asset) return new Response('Not found', {status:404});
-      const bytes = Uint8Array.from(atob(asset.data), c => c.charCodeAt(0));
-      return new Response(request.method === 'HEAD' ? null : bytes, {headers:{
-        'Content-Type':asset.type, 'Cache-Control':path.includes('/portraits/') ? 'public, max-age=86400' : 'no-cache',
-        'X-Content-Type-Options':'nosniff', 'Referrer-Policy':'same-origin',
-        'Cross-Origin-Opener-Policy':'same-origin', 'Cross-Origin-Embedder-Policy':'require-corp'
-      }});
+      if (path === '/api/shared-state') return await handleState(request, env);
+      if (path.startsWith('/api/')) return json({error:'없는 API입니다.'},404);
+      return await env.ASSETS.fetch(request);
     } catch (error) {
       console.error('Shared store error', error);
-      return json({error:'공유 저장소에 연결하지 못했습니다. 입력을 유지하며 다시 시도해 주세요.'}, 503);
+      return json({error:'공유 저장소에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.'},503);
     }
   }
 };

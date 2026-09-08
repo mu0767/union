@@ -11,6 +11,7 @@
   <script src="characters.js" defer></script>
   <script src="character-catalog.js" defer></script>
   <script src="level_attack_power.js" defer></script>
+  <script src="shared-state.js" defer></script>
   <script src="planner.js" defer></script>
 </head>
 <body>
@@ -19,7 +20,7 @@
   <main>
     <section class="intro"><div><p class="eyebrow">MATHEMATICAL RAID PLANNER</p><h1>유니온 레이드 운영<span>.</span></h1><p class="subtitle">남은 공격권과 시간, 파티 중복, 보스 진행을 함께 계산합니다.</p></div></section>
     <nav class="tabs page-tabs" aria-label="페이지 선택"><a href="index.html">딜량 기록</a><a href="index.html#bosses">보스 정보</a><a class="active" href="planner.html" aria-current="page">레이드 운영</a></nav>
-    <p id="planner-status" class="planner-status" role="status" aria-live="polite">이 브라우저에 자동 저장됩니다.</p>
+    <p id="planner-status" class="planner-status" role="status" aria-live="polite">공유 데이터를 불러오는 중입니다.</p>
     <section id="view-schedule" class="planner-view">
       <div class="section-title"><div><p class="eyebrow">RAID SCHEDULE</p><h2>시간표</h2></div><div class="schedule-actions"><button id="reset-plan" type="button">전체 초기화</button><button id="calculate" class="primary">최적 계획 계산</button></div></div>
       <div class="time-slot-settings"><span class="time-slot-title">표시 시간대</span><div id="plan-time-slots" class="time-slot-options">

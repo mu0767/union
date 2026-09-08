@@ -307,15 +307,16 @@ $('multipliers-toggle').addEventListener('click', () => {
   panel.hidden = !panel.hidden;
   $('multipliers-toggle').setAttribute('aria-expanded', String(!panel.hidden));
 });
-$('multiplier-fields').addEventListener('input', event => {
+$('multiplier-fields').addEventListener('change', async event => {
   const input = event.target.closest('[data-multiplier]');
   if (!input) return;
   const value = Number(input.value);
-  if (!Number.isFinite(value) || value < 0) return;
-  damageMultipliers[Number(input.dataset.multiplier)] = value;
-  render();
+  if (!Number.isFinite(value) || value < 0 || value > 100) return;
+  const next = [...damageMultipliers];
+  next[Number(input.dataset.multiplier)] = value;
+  await saveBoard('multipliers', next);
 });
-$('multipliers-reset').addEventListener('click', () => { damageMultipliers = raidElements.map(() => 1); renderMultipliers(); render(); });
+$('multipliers-reset').addEventListener('click', () => saveBoard('multipliers', raidElements.map(() => 1)));
 renderMultipliers();
 selectPage(location.hash === '#bosses' ? 'bosses' : 'records');
 window.addEventListener('hashchange', () => selectPage(location.hash === '#bosses' ? 'bosses' : 'records'));
@@ -407,17 +408,16 @@ $('file').addEventListener('change', async event => {
   try {
     const raw = await file.text();
     const nextPeople = parseUnionRaid(raw);
-    people = nextPeople;
-    localStorage.setItem('union-raid-text', raw);
+    if (!await saveBoard('raidText', raw)) return;
     $('search').value = '';
     render();
     $('source').textContent = `SOURCE · ${file.name}`;
-    $('message').textContent = `${file.name}: ${people.length}명의 기록을 불러왔습니다. 이 파일은 현재 화면에만 적용됩니다.`;
+    $('message').textContent = `${file.name}: ${people.length}명의 기록을 공유 저장했습니다.`;
   } catch (error) { $('message').textContent = `불러오기 실패: ${error.message} 기존 기록은 유지됩니다.`; }
   $('message').hidden = false;
   event.target.value = '';
 });
-try { people = parseUnionRaid(localStorage.getItem('union-raid-text') || window.UNION_RAID_TEXT); render(); }
+try { people = parseUnionRaid(window.UNION_RAID_TEXT); render(); }
 catch (error) { $('message').textContent = `기록을 읽지 못했습니다: ${error.message}`; $('message').hidden = false; }
 loadSharedBosses();
 async function pollSharedBosses() {
@@ -426,3 +426,35 @@ async function pollSharedBosses() {
 }
 setTimeout(pollSharedBosses, 3000 + Math.random() * 2000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) loadSharedBosses(); });
+let boardDocument = null;
+let boardSaving = false;
+function boardControls(disabled) {
+  $('file').disabled = disabled;
+  $('multipliers-reset').disabled = disabled;
+  document.querySelectorAll('[data-multiplier]').forEach(input => input.disabled = disabled);
+}
+function applyBoard(store) {
+  const raw = store.raidText || window.UNION_RAID_TEXT;
+  people = parseUnionRaid(raw);
+  damageMultipliers = store.multipliers || raidElements.map(() => 1);
+  boardDocument = store;
+  renderMultipliers();render();
+}
+async function saveBoard(key, value) {
+  if (!boardDocument || boardSaving) return false;
+  boardSaving = true;boardControls(true);
+  try {
+    applyBoard(await SharedState.save(boardDocument.version, key, value));
+    $('message').textContent = '공유 저장 완료. 다른 기기에서 새로고침하면 반영됩니다.';
+    return true;
+  } catch (error) {
+    localStorage.setItem(`union-unsaved-${key}`, JSON.stringify(value));
+    try { applyBoard(await SharedState.load()); } catch { boardDocument = null; }
+    $('message').textContent = `공유 저장 실패: ${error.message} 미저장 입력은 이 브라우저에 백업했습니다.`;
+    return false;
+  } finally { boardSaving=false;boardControls(!boardDocument);$('message').hidden=false; }
+}
+boardControls(true);
+SharedState.load().then(store => { applyBoard(store);boardControls(false); }).catch(error => {
+  $('message').textContent=`공유 연결 실패: ${error.message}`;$('message').hidden=false;
+});

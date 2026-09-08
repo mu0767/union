@@ -26,3 +26,7 @@ test_server.py
 .server/
 .extract-defaults.cjs
 .test-server/
+
+.wrangler/
+.dev.vars
+.env
