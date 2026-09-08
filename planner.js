@@ -324,6 +324,7 @@ function renderPlan(plan,target=$('plan-list')){
       return `<div class="raid-board-wrap"><div class="raid-round-label">R${round===4?'최종':round}</div><div class="raid-board" style="--cols:${bosses.length}">
         <div class="raid-board-head"><span></span>${bosses.map(b=>`<strong>${escapeHTML(b.name)}<small>${escapeHTML(b.element)} · HP ${b.hp==='infinite'?'∞':displayNumber(b.hp)}</small></strong>`).join('')}</div>
         ${Array.from({length:rows},(_,row)=>`<div class="raid-board-row"><span class="raid-row-index">${row+1}</span>${bosses.map(b=>`<div class="raid-board-cell">${attacks.filter(a=>a.bossId===b.id)[row] ? attackCard(attacks.filter(a=>a.bossId===b.id)[row]) : ''}</div>`).join('')}</div>`).join('')}
+        <div class="raid-board-row raid-board-manual"><span class="raid-row-index">+</span>${bosses.map(b=>`<div class="raid-board-cell"><button type="button" class="manual-add-attack" data-manual-add-boss="${escapeHTML(b.id)}">＋ 공격 추가</button></div>`).join('')}</div>
         <div class="raid-board-footer"><span>남은 HP</span>${remaining.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-footer raid-board-overkill"><span>오버딜</span>${overkill.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-alts"><span>대체 후보</span>${alternatives.map(list=>`<div>${list.length?list.map(x=>`<button type="button" class="alt-candidate" title="${escapeHTML(x.party.name)} · ${x.party.nikkes.map(escapeHTML).join(' / ')}"><strong>${escapeHTML(x.user.name)}</strong><small>${formatPlannerDamage(x.user.id,x.party.element,x.damage,round)}</small></button>`).join(''):'<small class="no-alt">없음</small>'}</div>`).join('')}</div>
@@ -542,17 +543,84 @@ async function solveRaid(state, progress = () => {}) {
 }
 
 
+function plannedUsageForUser(userId,excludeIndex=-1){
+  const used=new Set(state.results.filter(r=>r.userId===userId).flatMap(r=>r.nikkes||[]));
+  let count=state.results.filter(r=>r.userId===userId).length;
+  (state.plan?.attacks||[]).forEach((a,i)=>{
+    if(i===excludeIndex||a.userId!==userId||planResultForAttack(a))return;
+    count++;(a.nikkes||[]).forEach(n=>used.add(n));
+  });
+  return {used,count};
+}
+function manualPartyCandidates(boss,excludeIndex=-1){
+  const rows=[];
+  for(const user of state.users.filter(u=>u.active)){
+    const usage=plannedUsageForUser(user.id,excludeIndex);
+    for(const party of user.parties||[]){
+      if(party.element!==boss.element)continue;
+      const overlap=party.nikkes.filter(n=>usage.used.has(n));
+      const blocked=usage.count>=3||overlap.length>0;
+      rows.push({user,party,damage:partyDamageForBoss(party,boss)||0,blocked,reason:usage.count>=3?'공격권 3회 사용 예정':overlap.length?`니케 중복: ${overlap.join(' / ')}`:''});
+    }
+  }
+  return rows.sort((a,b)=>Number(a.blocked)-Number(b.blocked)||b.damage-a.damage||a.user.name.localeCompare(b.user.name));
+}
+function recomputeManualPlanSummary(){
+  if(!state.plan)return;
+  const actual=new Map();for(const r of state.results)actual.set(r.bossId,(actual.get(r.bossId)||0)+Number(r.damage||0));
+  const planned=new Map();
+  for(const a of state.plan.attacks||[]){
+    if(planResultForAttack(a))continue;
+    planned.set(a.bossId,(planned.get(a.bossId)||0)+Number(a.damage||0));
+  }
+  let reached=1;
+  for(const round of [1,2,3]){
+    const clear=state.bosses.filter(b=>b.round===round).every(b=>(actual.get(b.id)||0)+(planned.get(b.id)||0)>=Number(b.hp||0));
+    if(clear)reached=round+1;else break;
+  }
+  const finalBoss=state.bosses.find(b=>b.round===4);
+  const finalDamage=finalBoss?(planned.get(finalBoss.id)||0):0;
+  let overkill=0;
+  for(const b of state.bosses.filter(b=>b.round!==4)){
+    overkill+=Math.max(0,(actual.get(b.id)||0)+(planned.get(b.id)||0)-Number(b.hp||0));
+  }
+  state.plan.summary={...(state.plan.summary||{}),reachedFinal:reached===4,reachedRound:reached,attackCount:(state.plan.attacks||[]).length,totalOverkill:overkill,finalDamage,targetDamage:reached===4?finalDamage:state.bosses.filter(b=>b.round===reached).reduce((s,b)=>s+(planned.get(b.id)||0),0),optimization:{stage:'MANUAL',target:'MANUAL',waste:'MANUAL'}};
+}
+async function saveManualPlan(message){
+  recomputeManualPlanSummary();renderAll();await saveShared(message);
+}
+function manualChoiceOptions(boss,excludeIndex=-1,currentUserId='',currentPartyId=''){
+  return manualPartyCandidates(boss,excludeIndex).map((x,i)=>{
+    const selected=x.user.id===currentUserId&&x.party.id===currentPartyId;
+    return `<option value="${escapeHTML(x.user.id)}|${escapeHTML(x.party.id)}" ${selected?'selected':''} ${x.blocked&&!selected?'disabled':''}>${escapeHTML(x.user.name)} · ${escapeHTML(x.party.name)} · ${displayNumber(x.damage)}${x.blocked?' · 사용 불가':''}</option>`;
+  }).join('');
+}
+function openManualAdd(bossId){
+  const boss=state.bosses.find(b=>b.id===bossId);if(!boss||!state.plan)return;
+  const options=manualChoiceOptions(boss);
+  $('attack-detail-title').textContent=`수동 공격 추가 · R${boss.round===4?'최종':boss.round} ${boss.name}`;
+  $('attack-detail-body').innerHTML=`<form id="manual-plan-form" class="manual-plan-form" data-mode="add" data-boss-id="${escapeHTML(boss.id)}">
+    <label>플레이어 / 파티<select name="choice" required>${options}</select></label>
+    <p class="help">같은 속성 파티만 표시됩니다. 완료·예정 공격과 니케가 겹치거나 공격권 3회를 넘으면 선택할 수 없습니다.</p>
+    <div class="manual-plan-actions"><button class="primary">공격 추가</button></div>
+  </form>`;
+  $('attack-actual-form').hidden=true;
+  $('attack-detail-dialog').showModal();
+}
 function openAttackDetail(index){
   const attack=state.plan?.attacks?.[index];if(!attack)return;
-  const user=state.users.find(u=>u.id===attack.userId);if(!user)return;
+  const user=state.users.find(u=>u.id===attack.userId),boss=state.bosses.find(b=>b.id===attack.bossId);if(!user||!boss)return;
   const used=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
   $('attack-detail-title').textContent=`${user.name} · R${attack.round===4?'최종':attack.round} ${attack.bossName}`;
   $('attack-detail-body').innerHTML=`
-    <div class="attack-detail-current"><strong>이번 공격</strong><p>${formatPlannerDamage(attack.userId,attack.element,attack.damage,attack.round)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
-    <div class="attack-detail-used"><strong>이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
-  const result=planResultForAttack(attack);
-  const f=$('attack-actual-form');delete f.dataset.resultId;f.elements.attackIndex.value=String(index);f.elements.damage.value=displayNumber(result?result.damage:attack.damage);
-  f.querySelector('button').textContent=result?'실제 딜 수정':'실제 결과 저장';
+    <div class="attack-detail-current"><strong>예정 공격</strong><p>${formatPlannerDamage(attack.userId,attack.element,attack.damage,attack.round)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
+    <form id="manual-plan-form" class="manual-plan-form" data-mode="edit" data-index="${index}" data-boss-id="${escapeHTML(boss.id)}">
+      <label>플레이어 / 파티<select name="choice" required>${manualChoiceOptions(boss,index,attack.userId,attack.partyId)}</select></label>
+      <div class="manual-plan-actions"><button class="primary">계획 변경</button><button type="button" class="danger" data-delete-plan-index="${index}">예정 공격 삭제</button></div>
+    </form>
+    <div class="attack-detail-used"><strong>이 플레이어가 완료 공격에서 이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
+  const f=$('attack-actual-form');f.hidden=false;delete f.dataset.resultId;f.elements.attackIndex.value=String(index);f.elements.damage.value=displayNumber(attack.damage);
+  f.querySelector('button').textContent='실제 결과 저장';
   $('attack-detail-dialog').showModal();
 }
 function partyDamageForBoss(party,boss){return boss?.round===4?(party.finalDamage??party.normalDamage):party.normalDamage}
@@ -659,7 +727,34 @@ $('reset-plan')?.addEventListener('click',async()=>{
   try{await saveShared('전체 데이터를 초기화했습니다.');}
   catch(error){alert('공유 초기화 저장에 실패했습니다: '+error.message);}
 });
+document.addEventListener('submit',async e=>{
+  const form=e.target.closest('#manual-plan-form');if(!form)return;
+  e.preventDefault();
+  try{
+    const [userId,partyId]=String(form.elements.choice.value||'').split('|');
+    const user=state.users.find(u=>u.id===userId),party=user?.parties.find(p=>p.id===partyId),boss=state.bosses.find(b=>b.id===form.dataset.bossId);
+    if(!user||!party||!boss||party.element!==boss.element)throw new Error('선택한 공격 정보를 찾을 수 없습니다.');
+    const exclude=form.dataset.mode==='edit'?Number(form.dataset.index):-1;
+    const candidate=manualPartyCandidates(boss,exclude).find(x=>x.user.id===userId&&x.party.id===partyId);
+    if(!candidate||candidate.blocked)throw new Error(candidate?.reason||'현재 사용할 수 없는 파티입니다.');
+    const attack={start:state.settings?.startAt,timeLabel:'',isNow:false,userId:user.id,userName:user.name,partyId:party.id,partyName:party.name,nikkes:[...party.nikkes],bossId:boss.id,bossName:boss.name,round:boss.round,element:boss.element,damage:partyDamageForBoss(party,boss)||0,beforeHp:null,afterHp:null,overkill:0,attackNumber:1};
+    if(form.dataset.mode==='edit')state.plan.attacks[exclude]=attack;else state.plan.attacks.push(attack);
+    const counts=new Map();
+    for(const a of state.plan.attacks){counts.set(a.userId,(counts.get(a.userId)||0)+1);a.attackNumber=state.results.filter(r=>r.userId===a.userId).length+counts.get(a.userId);}
+    await saveManualPlan(form.dataset.mode==='edit'?'예정 공격을 수동 변경했습니다.':'예정 공격을 수동 추가했습니다.');
+    $('attack-detail-dialog').close();
+  }catch(error){alert(error.message);}
+});
 document.addEventListener('click',e=>{
+  const add=e.target.closest('[data-manual-add-boss]');if(add){openManualAdd(add.dataset.manualAddBoss);return}
+  const del=e.target.closest('[data-delete-plan-index]');if(del){
+    const index=Number(del.dataset.deletePlanIndex),attack=state.plan?.attacks?.[index];
+    if(attack&&!planResultForAttack(attack)&&confirm(`${attack.userName}의 예정 공격을 삭제할까요?`)){
+      state.plan.attacks.splice(index,1);
+      saveManualPlan('예정 공격을 삭제했습니다.').then(()=>$('attack-detail-dialog').close()).catch(error=>alert(error.message));
+    }
+    return;
+  }
   const choice=e.target.closest('[data-party-choice]');
   if(choice&&!choice.disabled){
     const f=$('attack-actual-form'),resultId=f.dataset.resultId;
@@ -674,7 +769,7 @@ document.addEventListener('click',e=>{
   const resultCard=e.target.closest('[data-result-id]');if(resultCard){openCompletedAttackDetail(resultCard.dataset.resultId);return}
   const card=e.target.closest('[data-plan-index]');if(card)openAttackDetail(Number(card.dataset.planIndex));
 });
-$('attack-detail-close')?.addEventListener('click',()=>$('attack-detail-dialog').close());
+$('attack-detail-close')?.addEventListener('click',()=>{$('attack-actual-form').hidden=false;$('attack-detail-dialog').close();});
 $('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜량은 0 이상의 정수여야 합니다.');try{
   if(f.dataset.resultId){
     const result=state.results.find(r=>r.id===f.dataset.resultId);if(!result)throw new Error('완료 공격을 찾을 수 없습니다.');
