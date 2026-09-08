@@ -649,14 +649,15 @@ async function calculate(){
 document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b===button));document.querySelectorAll('.planner-view').forEach(v=>v.hidden=v.id!==`view-${button.dataset.view}`)}));
 $('raid-settings')?.addEventListener('submit',async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.target));if(new Date(values.startAt)>=new Date(values.endAt))return alert('종료 시각은 시작보다 늦어야 합니다.');const rows=[...$('planner-boss-body').querySelectorAll('tr')];try{state.bosses=rows.map((row,index)=>{const raw=row.querySelector('[name=bossHp]').value.trim();const final=index===rows.length-1;const hp=/^(무한|infinite|∞)$/i.test(raw)?'infinite':Number(raw.replace(/,/g,''));if((!final&&hp==='infinite')||(hp!=='infinite'&&(!Number.isSafeInteger(hp)||hp<=0)))throw new Error('일반 보스 HP는 0보다 큰 정수여야 합니다.');const prior=state.bosses.find(b=>b.id===row.dataset.bossId);return{...prior,name:row.querySelector('[name=bossName]').value.trim(),element:row.querySelector('[name=bossElement]').value,hp}});for(const round of [1,2,3])if(new Set(state.bosses.filter(b=>b.round===round).map(b=>b.element)).size!==5)throw new Error(`Round ${round}에는 5개 속성을 하나씩 선택해야 합니다.`)}catch(error){return alert(error.message)}state.settings={...values,attackMinutes:Number(values.attackMinutes),simultaneous:values.simultaneous==='true',finalElement:state.bosses.at(-1).element};state.plan=null;await saveShared('레이드와 보스 설정을 저장했습니다.');renderAll()});
 $('calculate')?.addEventListener('click',calculate);
-$('reset-plan')?.addEventListener('click',()=>{
+$('reset-plan')?.addEventListener('click',async()=>{
   if(!confirm('입력 데이터, 실제 공격 결과, 계산된 공격 계획을 모두 초기화할까요?'))return;
   localStorage.removeItem('union-planner-v2');
   state=parseUnionRaidSeed();
   ensurePlanningSettings();
   selectedUser=null;
   renderAll();
-  localSave('전체 데이터를 초기화했습니다.');
+  try{await saveShared('전체 데이터를 초기화했습니다.');}
+  catch(error){alert('공유 초기화 저장에 실패했습니다: '+error.message);}
 });
 document.addEventListener('click',e=>{
   const choice=e.target.closest('[data-party-choice]');
