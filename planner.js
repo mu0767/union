@@ -188,42 +188,18 @@ function timeInSlot(date,slot){
   return a===b||a<b?(minute>=a&&minute<b):(minute>=a||minute<b);
 }
 function alternativeCandidates(attack,slot){
-  const userResults=new Map();
-  for(const r of state.results||[]){
-    if(!userResults.has(r.userId))userResults.set(r.userId,[]);
-    userResults.get(r.userId).push(r);
-  }
-  const assignedByUser=new Map();
-  for(const a of state.plan?.attacks||[]){
-    if(!assignedByUser.has(a.userId))assignedByUser.set(a.userId,[]);
-    assignedByUser.get(a.userId).push(a);
-  }
-  const targetBoss=state.bosses.find(b=>b.id===attack.bossId);
-  if(!targetBoss)return [];
-  const candidates=[];
-  for(const user of state.users.filter(u=>u.active&&u.id!==attack.userId)){
-    const completed=userResults.get(user.id)||[];
-    const planned=assignedByUser.get(user.id)||[];
-    const usedNikkes=new Set(completed.flatMap(r=>r.nikkes||[]));
-    const plannedNikkes=new Set(planned.flatMap(a=>a.nikkes||[]));
-    const usedAttacks=completed.length+planned.length;
-    if(usedAttacks>=3)continue;
-    for(const party of user.parties||[]){
-      if(party.element!==targetBoss.element)continue;
-      if(party.nikkes.some(n=>usedNikkes.has(n)||plannedNikkes.has(n)))continue;
-      const damage=targetBoss.round===4?(party.finalDamage??party.normalDamage):party.normalDamage;
-      if(!damage)continue;
-      const fits=(user.availability||[]).some(w=>{
-        const fake=new Date(attack.start);
-        const [sh,sm]=w.start.split(':').map(Number),[eh,em]=w.end.split(':').map(Number);
-        const min=fake.getHours()*60+fake.getMinutes(),a=sh*60+sm,b=eh*60+em;
-        return a===b||a<b?(min>=a&&min<b):(min>=a||min<b);
-      });
-      if(!fits)continue;
-      candidates.push({user,party,damage});
-    }
-  }
-  return candidates.sort((a,b)=>b.damage-a.damage).slice(0,8);
+  const boss=state.bosses.find(b=>b.id===attack.bossId);
+  const user=state.users.find(u=>u.id===attack.userId);
+  if(!boss||!user)return [];
+  const completedUsed=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
+  const plannedUsed=new Set((state.plan?.attacks||[]).filter(a=>a.userId===user.id&&a!==attack&&!planResultForAttack(a)).flatMap(a=>a.nikkes||[]));
+  return (user.parties||[])
+    .filter(p=>p.id!==attack.partyId&&p.element===boss.element)
+    .filter(p=>!p.nikkes.some(n=>completedUsed.has(n)||plannedUsed.has(n)))
+    .map(p=>({user,party:p,damage:partyDamageForBoss(p,boss)||0}))
+    .filter(x=>x.damage>0)
+    .sort((a,b)=>b.damage-a.damage)
+    .slice(0,8);
 }
 
 function formatPlannerDamage(userId,element,damage,round=1){
@@ -330,7 +306,7 @@ function renderPlan(plan,target=$('plan-list')){
         ${Array.from({length:rows},(_,row)=>`<div class="raid-board-row"><span class="raid-row-index">${row+1}</span>${bosses.map(b=>`<div class="raid-board-cell">${attacks.filter(a=>a.bossId===b.id)[row] ? attackCard(attacks.filter(a=>a.bossId===b.id)[row]) : ''}</div>`).join('')}</div>`).join('')}
         <div class="raid-board-footer"><span>남은 HP</span>${remaining.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-footer raid-board-overkill"><span>오버딜</span>${overkill.map(v=>`<strong>${v}</strong>`).join('')}</div>
-        <div class="raid-board-alts"><span>대체 후보</span>${alternatives.map(list=>`<div>${list.length?list.map(x=>`<button type="button" class="alt-candidate" title="${escapeHTML(x.party.name)} · ${x.party.nikkes.map(escapeHTML).join(' / ')}"><strong>${escapeHTML(x.user.name)}</strong><small>${formatPlannerDamage(x.user.id,x.party.element,x.damage,round)}</small></button>`).join(''):'<small class="no-alt">없음</small>'}</div>`).join('')}</div>
+        <div class="raid-board-alts"><span>내 다른 스쿼드</span>${alternatives.map(list=>`<div>${list.length?list.map(x=>`<button type="button" class="alt-candidate" title="${escapeHTML(x.party.name)} · ${x.party.nikkes.map(escapeHTML).join(' / ')}"><strong>${escapeHTML(x.user.name)}</strong><small>${formatPlannerDamage(x.user.id,x.party.element,x.damage,round)}</small></button>`).join(''):'<small class="no-alt">없음</small>'}</div>`).join('')}</div>
       </div></div>`;
   }).join('');
 }
@@ -559,15 +535,19 @@ function manualPartyCandidates(boss,excludeIndex=-1){
   const rows=[];
   for(const user of state.users.filter(u=>u.active)){
     const usage=plannedUsageForUser(user.id,excludeIndex);
-    for(const party of user.parties||[]){
-      if(party.element!==boss.element)continue;
-      const overlap=party.nikkes.filter(n=>usage.used.has(n));
-      const blocked=usage.count>=3||overlap.length>0;
-      rows.push({user,party,damage:partyDamageForBoss(party,boss)||0,blocked,reason:usage.count>=3?'공격권 3회 사용 예정':overlap.length?`니케 중복: ${overlap.join(' / ')}`:''});
-    }
+    if(usage.count>=3)continue;
+    const legal=(user.parties||[])
+      .filter(p=>p.element===boss.element)
+      .filter(p=>!p.nikkes.some(n=>usage.used.has(n)))
+      .map(p=>({user,party:p,damage:partyDamageForBoss(p,boss)||0,blocked:false,reason:''}))
+      .filter(x=>x.damage>0)
+      .sort((a,b)=>b.damage-a.damage)
+      .slice(0,3);
+    rows.push(...legal);
   }
-  return rows.sort((a,b)=>Number(a.blocked)-Number(b.blocked)||b.damage-a.damage||a.user.name.localeCompare(b.user.name));
+  return rows.sort((a,b)=>a.user.name.localeCompare(b.user.name)||b.damage-a.damage);
 }
+
 function recomputeManualPlanSummary(){
   if(!state.plan)return;
   const actual=new Map();for(const r of state.results)actual.set(r.bossId,(actual.get(r.bossId)||0)+Number(r.damage||0));
@@ -604,11 +584,16 @@ function openManualAdd(bossId){
   $('attack-detail-title').textContent=`수동 공격 추가 · R${boss.round===4?'최종':boss.round} ${boss.name}`;
   $('attack-detail-body').innerHTML=`<form id="manual-plan-form" class="manual-plan-form" data-mode="add" data-boss-id="${escapeHTML(boss.id)}">
     <label>플레이어 / 파티<select name="choice" required>${options}</select></label>
-    <p class="help">같은 속성 파티만 표시됩니다. 완료·예정 공격과 니케가 겹치거나 공격권 3회를 넘으면 선택할 수 없습니다.</p>
+    <p class="help">같은 속성에서 각 플레이어별 딜 우선순위가 높은 사용 가능 스쿼드만 표시됩니다. 완료·예정 공격에서 이미 사용한 니케가 포함된 스쿼드는 제외됩니다.</p>
     <div class="manual-plan-actions"><button class="primary">공격 추가</button></div>
   </form>`;
   $('attack-actual-form').hidden=true;
   $('attack-detail-dialog').showModal();
+}
+function usedNikkePortraits(names){
+  const list=[...names];
+  if(!list.length)return '<span class="no-used-nikke">없음</span>';
+  return `<div class="used-nikke-portraits">${list.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span title="${escapeHTML(n)}">${escapeHTML(n)}</span>`;}).join('')}</div>`;
 }
 function openAttackDetail(index){
   const attack=state.plan?.attacks?.[index];if(!attack)return;
@@ -621,7 +606,7 @@ function openAttackDetail(index){
       <label>플레이어 / 파티<select name="choice" required>${manualChoiceOptions(boss,index,attack.userId,attack.partyId)}</select></label>
       <div class="manual-plan-actions"><button class="primary">계획 변경</button></div>
     </form>
-    <div class="attack-detail-used"><strong>이 플레이어가 완료 공격에서 이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
+    <div class="attack-detail-used"><strong>이 플레이어가 완료 공격에서 이미 사용한 니케</strong>${usedNikkePortraits(used)}</div>`;
   const f=$('attack-actual-form');f.hidden=false;delete f.dataset.resultId;f.elements.attackIndex.value=String(index);f.elements.damage.value=displayNumber(attack.damage);
   f.querySelector('button').textContent='실제 결과 저장';
   $('attack-detail-dialog').showModal();
@@ -649,7 +634,7 @@ function openCompletedAttackDetail(resultId){
   $('attack-detail-body').innerHTML=`
     <div class="attack-detail-current"><strong>완료된 공격</strong><p>예상 ${displayNumber(result.plannedDamage??attack.damage)} · 실제 ${displayNumber(result.damage)} · ${attack.attackNumber}타</p></div>
     <div class="attack-party-choices"><strong>같은 속성 다른 조합</strong><p class="help">다른 완료 공격에서 이미 사용한 니케가 겹치면 선택할 수 없습니다.</p>${partyChoiceHTML(user,boss,result.partyId,resultId)}</div>
-    <div class="attack-detail-used"><strong>이전 완료 공격에서 이미 사용한 니케</strong><p>${used.size?[...used].map(escapeHTML).join(' / '):'없음'}</p></div>`;
+    <div class="attack-detail-used"><strong>이전 완료 공격에서 이미 사용한 니케</strong>${usedNikkePortraits(used)}</div>`;
   const f=$('attack-actual-form');f.dataset.resultId=resultId;f.dataset.partyId=result.partyId;f.elements.attackIndex.value='';f.elements.damage.value=displayNumber(result.damage);
   f.querySelector('button').textContent='변경 저장 후 재계산';
   $('attack-detail-dialog').showModal();
