@@ -74,7 +74,7 @@ async function handleApi(request, env) {
     const {value, done} = await reader.read();
     if (done) break;
     length += value.length;
-    if (length > 16000) { await reader.cancel(); return json({error:'요청 크기 초과'}, 413); }
+    if (length > 1500000) { await reader.cancel(); return json({error:'요청 크기 초과'}, 413); }
     chunks.push(value);
   }
   let body;
