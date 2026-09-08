@@ -43,3 +43,11 @@
 .party-choice-portraits figure{margin:0;width:44px}.party-choice-portraits img{width:44px;height:44px;object-fit:cover;border-radius:7px}
 .party-choice-portraits figcaption{font-size:8px;line-height:1.1;margin-top:2px}
 .party-choice .used-nikke{filter:saturate(.45);color:#ff7b7b;text-decoration:line-through}.party-choice figure.used-nikke img{outline:2px solid #b64a4a;opacity:.6}
+
+.manual-plan-form{display:grid;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)}
+.manual-plan-form label{display:grid;gap:6px}.manual-plan-form select{width:100%;min-height:42px}
+.manual-plan-actions{display:flex;gap:8px;flex-wrap:wrap}
+.manual-plan-actions .danger{border-color:#7a3535;color:#ff8d8d;background:#2a1719}
+.raid-board-manual .raid-board-cell{padding:5px}
+.manual-add-attack{width:100%;min-height:34px;border:1px dashed rgba(255,255,255,.2);border-radius:8px;background:transparent;color:#9ca7bd;font-size:11px;cursor:pointer}
+.manual-add-attack:hover{border-color:#7aa2ff;color:#c9d8ff;background:rgba(122,162,255,.07)}
