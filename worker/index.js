@@ -60,6 +60,10 @@ async function handleApi(request, env) {
       return json({version:row?.version ?? 0});
     }
     if (url.searchParams.get('action') === 'load') return json(await readStore(env.DB));
+    if (url.searchParams.get('action') === 'planner-version') {
+      const row=await env.DB.prepare('SELECT version FROM shared_bosses WHERE id = 1').first();
+      return json({version:row?.version ?? 0});
+    }
     if (url.searchParams.get('action') === 'planner') { const s=await readStore(env.DB); return json({version:s.version, plannerState:s.plannerState ?? s.planner ?? null}); }
     if (url.searchParams.get('action') === 'multipliers') { const s=await readStore(env.DB); return json({version:s.version, damageMultipliers:s.damageMultipliers ?? s.multipliers ?? [1,1,1,1,1]}); }
     return json({error:'지원하지 않는 요청'}, 400);
