@@ -238,3 +238,15 @@
     gap:8px;
   }
 }
+
+.attack-actual-actions{display:flex;gap:8px;align-items:stretch}
+.attack-actual-actions>button{flex:1}
+.final-blow-button{border:1px solid rgba(255,92,92,.58);background:rgba(115,25,30,.16);color:#ff9a9a}
+.final-blow-button:hover{background:rgba(135,28,34,.28);border-color:rgba(255,92,92,.82)}
+.raid-slot-card.completed.final-blow{
+  border:2px solid #e45656 !important;
+  box-shadow:inset 0 0 0 1px rgba(228,86,86,.18);
+}
+@media(max-width:700px){
+  .attack-actual-actions{gap:6px}
+}
