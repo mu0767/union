@@ -266,7 +266,6 @@ function renderPlan(plan,target=$('plan-list')){
         <b>${result?displayNumber(result.damage):formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</b>
         ${result?`<em>예상 ${displayNumber(a.damage)}</em>`:''}
       </button>
-      ${result?'':`<button type="button" class="raid-slot-add-below" data-manual-add-boss="${escapeHTML(a.bossId)}" title="이 보스에 공격 추가">＋</button>`}
     </div>`;
   };
 
@@ -304,6 +303,7 @@ function renderPlan(plan,target=$('plan-list')){
       return `<div class="raid-board-wrap"><div class="raid-round-label">R${round===4?'최종':round}</div><div class="raid-board" style="--cols:${bosses.length}">
         <div class="raid-board-head"><span></span>${bosses.map(b=>`<strong>${escapeHTML(b.name)}<small>${escapeHTML(b.element)} · HP ${b.hp==='infinite'?'∞':displayNumber(b.hp)}</small></strong>`).join('')}</div>
         ${Array.from({length:rows},(_,row)=>`<div class="raid-board-row"><span class="raid-row-index">${row+1}</span>${bosses.map(b=>`<div class="raid-board-cell">${attacks.filter(a=>a.bossId===b.id)[row] ? attackCard(attacks.filter(a=>a.bossId===b.id)[row]) : ''}</div>`).join('')}</div>`).join('')}
+        <div class="raid-board-row raid-board-next-row"><span class="raid-row-index">${rows+1}</span>${bosses.map(b=>`<div class="raid-board-cell"><button type="button" class="raid-slot-add-below" data-manual-add-boss="${escapeHTML(b.id)}" title="${rows+1}번 공격 추가">＋</button></div>`).join('')}</div>
         <div class="raid-board-footer"><span>남은 HP</span>${remaining.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-footer raid-board-overkill"><span>오버딜</span>${overkill.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-alts"><span>내 다른 스쿼드</span>${alternatives.map(list=>`<div>${list.length?list.map(x=>`<button type="button" class="alt-candidate" title="${escapeHTML(x.party.name)} · ${x.party.nikkes.map(escapeHTML).join(' / ')}"><strong>${escapeHTML(x.user.name)}</strong><small>${formatPlannerDamage(x.user.id,x.party.element,x.damage,round)}</small></button>`).join(''):'<small class="no-alt">없음</small>'}</div>`).join('')}</div>
