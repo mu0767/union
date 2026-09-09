@@ -329,8 +329,7 @@ function renderSchedule(){
   const plan=state.plan;
   const completed=completedPlanAttacks();
   if(!plan){$('plan-summary').innerHTML='';renderPlan(completed.length?completed:null);return}
-  const s=plan.summary;
-  $('plan-summary').innerHTML=[['예상 도달',s.reachedFinal?'최종보스':`Round ${s.reachedRound}`],[s.reachedFinal?'최종보스 딜':`R${s.reachedRound} 유효 딜`,s.targetDamage==null?'재계산 필요':displayNumber(s.targetDamage)],['공격 사용',`${s.attackCount}회`],['총 오버딜',displayNumber(s.totalOverkill)],['보스별 허용 오차',`±${displayNumber(s.damageTolerance??0)}`]].map(x=>`<div class="summary-card"><small>${x[0]}</small><strong>${x[1]}</strong></div>`).join('');
+  $('plan-summary').innerHTML='';
   const remainingPlanAttacks=plan.attacks.filter(a=>!planResultForAttack(a));
   try{renderPlan([...completed,...remainingPlanAttacks])}catch(error){$('plan-list').className='plan-list empty-card';$('plan-list').textContent=`시간표 표시 실패: ${error.message}`;throw error}
 }
