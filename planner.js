@@ -598,20 +598,24 @@ function renderManualAddPicker(bossId,preferredUserId=''){
   const candidates=manualAddFilteredCandidates(boss);
   const grouped=new Map();
   for(const x of candidates){if(!grouped.has(x.user.id))grouped.set(x.user.id,{user:x.user,rows:[]});grouped.get(x.user.id).rows.push(x);}
-  const current=root.dataset.userId&&grouped.has(root.dataset.userId)?root.dataset.userId:(preferredUserId&&grouped.has(preferredUserId)?preferredUserId:[...grouped.keys()][0]||'');
+  let current=root.dataset.userId||preferredUserId||'';
+  if(current&&!grouped.has(current))current='';
   root.dataset.userId=current;
   const users=[...grouped.values()];
-  root.querySelector('.manual-user-list').innerHTML=users.length?users.map(g=>`<button type="button" class="manual-user-chip${g.user.id===current?' active':''}" data-manual-user="${escapeHTML(g.user.id)}"><strong>${escapeHTML(g.user.name)}</strong><small>${g.rows.length}개</small></button>`).join(''):'<p class="manual-empty">조건에 맞는 플레이어가 없습니다.</p>';
-  const chosen=grouped.get(current);
-  root.querySelector('.manual-squad-list').innerHTML=chosen?chosen.rows.map(x=>{
+  root.querySelector('.manual-user-list').innerHTML=users.length?
+    `<button type="button" class="manual-user-chip${current?'':' active'}" data-manual-user=""><strong>전체</strong><small>${candidates.length}개</small></button>`+
+    users.map(g=>`<button type="button" class="manual-user-chip${g.user.id===current?' active':''}" data-manual-user="${escapeHTML(g.user.id)}"><strong>${escapeHTML(g.user.name)}</strong><small>${g.rows.length}개</small></button>`).join('')
+    :'<p class="manual-empty">조건에 맞는 플레이어가 없습니다.</p>';
+  const visible=current?(grouped.get(current)?.rows||[]):candidates;
+  root.querySelector('.manual-squad-list').innerHTML=visible.length?visible.map(x=>{
     const portraits=x.party.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
     return `<button type="button" class="manual-squad-choice${root.dataset.choice===x.user.id+'|'+x.party.id?' selected':''}" data-manual-squad="${escapeHTML(x.user.id)}|${escapeHTML(x.party.id)}">
-      <div class="manual-squad-head"><strong>${escapeHTML(x.party.name)}</strong><b>${displayNumber(x.damage)}</b></div>
+      <div class="manual-squad-head"><span><strong>${escapeHTML(x.user.name)}</strong><small>${escapeHTML(x.party.name)}</small></span><b>${displayNumber(x.damage)}</b></div>
       <div class="manual-squad-portraits">${portraits}</div>
     </button>`;
-  }).join(''):'';
+  }).join(''):'<p class="manual-empty">조건에 맞는 스쿼드가 없습니다.</p>';
   const hidden=root.closest('form')?.elements.choice;
-  if(hidden&&!candidates.some(x=>x.user.id+'|'+x.party.id===root.dataset.choice)){root.dataset.choice='';hidden.value='';}
+  if(hidden&&!visible.some(x=>x.user.id+'|'+x.party.id===root.dataset.choice)){root.dataset.choice='';hidden.value='';}
   const submit=root.closest('form')?.querySelector('button[type="submit"]');if(submit)submit.disabled=!hidden?.value;
 }
 function openManualAdd(bossId){
