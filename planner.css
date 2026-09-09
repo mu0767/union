@@ -176,3 +176,26 @@
   .raid-slot-card b{font-size:12px}
   .raid-slot-add-card{width:100% !important;height:100% !important}
 }
+
+/* Restore original mobile horizontal board behavior; only increase vertical card room. */
+@media(max-width:700px){
+  .raid-board-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .raid-board{min-width:820px !important;width:820px}
+  .raid-board-head,.raid-board-row,.raid-board-footer{
+    min-width:0 !important;
+    width:auto;
+    grid-template-columns:36px repeat(var(--cols,5),minmax(145px,1fr)) !important;
+  }
+  .raid-board-cell{
+    width:auto !important;
+    min-width:0 !important;
+    height:132px !important;
+    min-height:132px !important;
+  }
+  .raid-board-cell>.raid-slot-card,
+  .raid-board-cell>.raid-slot-stack,
+  .raid-slot-add-card{
+    height:100% !important;
+    min-height:0 !important;
+  }
+}
