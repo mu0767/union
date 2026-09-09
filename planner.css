@@ -158,3 +158,21 @@
 .planned-party-choice.blocked{border-color:rgba(255,95,95,.45);background:rgba(120,24,30,.13);opacity:.72;cursor:not-allowed}
 .planned-party-choice.blocked em{grid-column:1/-1;color:#ff8c8c;font-size:10px;font-style:normal}
 .planned-party-portrait.used-nikke{outline:2px solid rgba(255,80,80,.72);border-radius:7px;filter:saturate(.35);opacity:.68}
+
+/* Locked plans are indicated on the board by outline only; control lives in detail dialog. */
+.raid-slot-card.locked{border:2px solid #e7bf4a !important;box-shadow:inset 0 0 0 1px rgba(231,191,74,.16)}
+.attack-detail-body{position:relative}
+.attack-detail-lock{position:absolute;top:0;right:0;z-index:5;width:34px;height:34px;display:grid;place-items:center;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(10,12,18,.72);cursor:pointer;font-size:17px}
+.attack-detail-lock.active{border-color:rgba(231,191,74,.65);background:rgba(95,75,20,.45)}
+/* Mobile: preserve readable card geometry instead of squeezing the board. */
+@media(max-width:700px){
+  .raid-board-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .raid-board{min-width:max-content}
+  .raid-board-row,.raid-board-head,.raid-board-footer{min-width:max-content}
+  .raid-board-cell{width:148px;min-width:148px;height:124px;min-height:124px}
+  .raid-slot-card{padding:9px}
+  .raid-slot-portraits img,.raid-slot-portraits span{flex:0 0 auto}
+  .raid-slot-top strong{font-size:12px}
+  .raid-slot-card b{font-size:12px}
+  .raid-slot-add-card{width:100% !important;height:100% !important}
+}
