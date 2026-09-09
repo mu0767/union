@@ -268,8 +268,8 @@ function renderPlan(plan,target=$('plan-list')){
     const result=planResultForAttack(a);
     const attr=a.completed?`data-result-id="${escapeHTML(a.resultId)}"`:`data-plan-index="${idx}"`;
     return `<div class="raid-slot-stack">
-      <button class="raid-slot-card${result?' completed':''}" ${attr}>
-        ${result?'':`<span class="raid-slot-actions"><span class="raid-slot-lock${planLockForAttack(a)?' active':''}" data-toggle-plan-lock="${idx}" title="${planLockForAttack(a)?'락 해제':'재계산 고정'}" aria-label="재계산 고정">${planLockForAttack(a)?'🔒':'🔓'}</span><span class="raid-slot-delete" data-delete-plan-index="${idx}" title="예정 공격 삭제" aria-label="예정 공격 삭제">×</span></span>`}
+      <button class="raid-slot-card${result?' completed':(planLockForAttack(a)?' locked':'')}" ${attr}>
+        ${result?'':`<span class="raid-slot-actions"><span class="raid-slot-delete" data-delete-plan-index="${idx}" title="예정 공격 삭제" aria-label="예정 공격 삭제">×</span></span>`}
         <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong>${result?'<span class="raid-slot-done">완료</span>':''}</div>
         <div class="raid-slot-portraits">${portraits}</div>
         <small>${a.attackNumber}타${result?' · 실제 딜':''}</small>
@@ -683,7 +683,9 @@ function openAttackDetail(index){
   const user=state.users.find(u=>u.id===attack.userId),boss=state.bosses.find(b=>b.id===attack.bossId);if(!user||!boss)return;
   const used=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
   $('attack-detail-title').textContent=`${user.name} · R${attack.round===4?'최종':attack.round} ${attack.bossName}`;
+  const locked=!!planLockForAttack(attack);
   $('attack-detail-body').innerHTML=`
+    <button type="button" class="attack-detail-lock${locked?' active':''}" data-toggle-plan-lock="${index}" title="${locked?'락 해제':'재계산 고정'}">${locked?'🔒':'🔓'}</button>
     <div class="attack-detail-current"><strong>예정 공격</strong><p>${formatPlannerDamage(attack.userId,attack.element,attack.damage,attack.round)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
     <form id="manual-plan-form" class="manual-plan-form" data-mode="edit" data-index="${index}" data-boss-id="${escapeHTML(boss.id)}" data-user-id="${escapeHTML(user.id)}">
       <input type="hidden" name="choice" value="${escapeHTML(user.id)}|${escapeHTML(attack.partyId)}">
@@ -863,7 +865,7 @@ document.addEventListener('click',e=>{
       const existing=(state.locks||[]).find(l=>l.userId===attack.userId&&l.partyId===attack.partyId&&l.bossId===attack.bossId);
       if(existing)state.locks=state.locks.filter(l=>l!==existing);
       else state.locks.push({id:uid(),userId:attack.userId,partyId:attack.partyId,bossId:attack.bossId});
-      saveShared(existing?'락을 해제했습니다.':'이 예정 공격을 재계산에서 고정했습니다.').then(renderAll).catch(error=>alert(error.message));
+      saveShared(existing?'락을 해제했습니다.':'이 예정 공격을 재계산에서 고정했습니다.').then(()=>{renderAll();if($('attack-detail-dialog')?.open)openAttackDetail(index);}).catch(error=>alert(error.message));
     }
     return;
   }
