@@ -102,3 +102,22 @@
   background:rgba(122,162,255,.07);
   border-color:rgba(122,162,255,.42);
 }
+
+/* Keep manual add slots visually identical to populated squad slots. */
+.raid-board-cell{display:flex;align-items:stretch}
+.raid-board-cell>.raid-slot-card,
+.raid-board-cell>.raid-slot-stack{flex:1;min-height:86px}
+.raid-slot-add-card{
+  box-sizing:border-box;
+  min-height:86px !important;
+  height:auto;
+  padding:10px;
+  border:2px dashed rgba(180,194,220,.28);
+  border-radius:8px;
+  background:rgba(255,255,255,.018);
+}
+@media(max-width:700px){
+  .raid-board-cell>.raid-slot-card,
+  .raid-board-cell>.raid-slot-stack,
+  .raid-slot-add-card{min-height:80px !important}
+}
