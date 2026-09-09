@@ -103,6 +103,11 @@ function compactPlannerState(){
       partyName:r.partyName||state.users.find(u=>u.id===r.userId)?.parties.find(p=>p.id===r.partyId)?.name,
       bossId:r.bossId,damage:r.damage,plannedDamage:r.plannedDamage,planStart:r.planStart,attackNumber:r.attackNumber,at:r.at
     })),
+    locks:(state.locks||[]).map(l=>({
+      userName:state.users.find(u=>u.id===l.userId)?.name,
+      partyName:state.users.find(u=>u.id===l.userId)?.parties.find(p=>p.id===l.partyId)?.name,
+      bossId:l.bossId
+    })).filter(l=>l.userName&&l.partyName&&l.bossId),
     plan
   };
 }
@@ -120,6 +125,10 @@ function expandPlannerState(saved){
     const u=next.users.find(x=>x.name===r.userName),p=u?.parties.find(x=>x.name===r.partyName),b=next.bosses.find(x=>x.id===r.bossId);
     if(!u||!p||!b)return null;
     return {id:r.id||uid(),userId:u.id,userName:u.name,partyId:p.id,partyName:p.name,nikkes:[...p.nikkes],element:p.element,bossId:b.id,bossName:b.name,round:b.round,damage:Number(r.damage)||0,plannedDamage:r.plannedDamage,planStart:r.planStart,attackNumber:r.attackNumber,at:r.at};
+  }).filter(Boolean);
+  next.locks=(saved.locks||[]).map(l=>{
+    const u=next.users.find(x=>x.name===l.userName),p=u?.parties.find(x=>x.name===l.partyName),b=next.bosses.find(x=>x.id===l.bossId);
+    return u&&p&&b?{id:uid(),userId:u.id,partyId:p.id,bossId:b.id}:null;
   }).filter(Boolean);
   if(saved.plan){
     const attacks=(saved.plan.attacks||[]).map(a=>{
@@ -252,6 +261,7 @@ function renderPlan(plan,target=$('plan-list')){
   }
 
   const baseDamage={};for(const r of state.results)baseDamage[r.bossId]=(baseDamage[r.bossId]||0)+Number(r.damage||0);
+  const planLockForAttack=a=>(state.locks||[]).find(l=>l.userId===a.userId&&l.partyId===a.partyId&&l.bossId===a.bossId);
   const attackCard=a=>{
     const idx=state.plan?.attacks?.indexOf(a)??-1;
     const portraits=a.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
@@ -259,7 +269,7 @@ function renderPlan(plan,target=$('plan-list')){
     const attr=a.completed?`data-result-id="${escapeHTML(a.resultId)}"`:`data-plan-index="${idx}"`;
     return `<div class="raid-slot-stack">
       <button class="raid-slot-card${result?' completed':''}" ${attr}>
-        ${result?'':`<span class="raid-slot-delete" data-delete-plan-index="${idx}" title="예정 공격 삭제" aria-label="예정 공격 삭제">×</span>`}
+        ${result?'':`<span class="raid-slot-actions"><span class="raid-slot-lock${planLockForAttack(a)?' active':''}" data-toggle-plan-lock="${idx}" title="${planLockForAttack(a)?'락 해제':'재계산 고정'}" aria-label="재계산 고정">${planLockForAttack(a)?'🔒':'🔓'}</span><span class="raid-slot-delete" data-delete-plan-index="${idx}" title="예정 공격 삭제" aria-label="예정 공격 삭제">×</span></span>`}
         <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong>${result?'<span class="raid-slot-done">완료</span>':''}</div>
         <div class="raid-slot-portraits">${portraits}</div>
         <small>${a.attackNumber}타${result?' · 실제 딜':''}</small>
@@ -656,41 +666,18 @@ function plannedPartyChoiceHTML(user,boss,currentPartyId,index){
   const completedUsed=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
   return (user.parties||[])
     .filter(p=>p.element===boss.element)
-    .filter(p=>p.id===currentPartyId||!p.nikkes.some(n=>completedUsed.has(n)))
     .map(p=>{
+      const overlap=p.nikkes.filter(n=>completedUsed.has(n));
+      const blocked=overlap.length>0;
       const damage=partyDamageForBoss(p,boss)||0;
-      const portraits=p.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
-      return `<button type="button" class="planned-party-choice${p.id===currentPartyId?' selected':''}" data-planned-party="${escapeHTML(p.id)}">
+      const portraits=p.nikkes.map(n=>{const src=characterImage(n),bad=completedUsed.has(n);return src?`<span class="planned-party-portrait${bad?' used-nikke':''}"><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}"></span>`:`<span class="planned-party-portrait${bad?' used-nikke':''}" title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
+      return `<button type="button" class="planned-party-choice${p.id===currentPartyId?' selected':''}${blocked?' blocked':''}" data-planned-party="${escapeHTML(p.id)}" ${blocked?'disabled':''} title="${blocked?'이미 사용한 니케가 포함되어 있습니다':'이 파티로 변경'}">
         <div class="planned-party-portraits">${portraits}</div>
         <strong>${displayNumber(damage)}</strong>
+        ${blocked?'<em>이미 사용한 니케가 포함되어 있습니다</em>':''}
       </button>`;
     }).join('');
 }
-function rebalanceUserPlannedAttacks(userId,changedIndex,newParty){
-  const user=state.users.find(u=>u.id===userId);if(!user)return null;
-  const completedUsed=new Set(state.results.filter(r=>r.userId===userId).flatMap(r=>r.nikkes||[]));
-  if(newParty.nikkes.some(n=>completedUsed.has(n)))return null;
-  const used=new Set([...completedUsed,...newParty.nikkes]);
-  const replacements=new Map();
-  const others=(state.plan?.attacks||[])
-    .map((a,i)=>({a,i}))
-    .filter(x=>x.i!==changedIndex&&x.a.userId===userId&&!planResultForAttack(x.a))
-    .sort((x,y)=>y.a.damage-x.a.damage);
-  for(const {a,i} of others){
-    const boss=state.bosses.find(b=>b.id===a.bossId);if(!boss)return null;
-    const choices=(user.parties||[])
-      .filter(p=>p.element===boss.element)
-      .filter(p=>!p.nikkes.some(n=>used.has(n)))
-      .map(p=>({p,damage:partyDamageForBoss(p,boss)||0}))
-      .filter(x=>x.damage>0)
-      .sort((x,y)=>y.damage-x.damage);
-    const best=choices[0];if(!best)return null;
-    best.p.nikkes.forEach(n=>used.add(n));
-    replacements.set(i,{party:best.p,damage:best.damage,boss});
-  }
-  return replacements;
-}
-
 function openAttackDetail(index){
   const attack=state.plan?.attacks?.[index];if(!attack)return;
   const user=state.users.find(u=>u.id===attack.userId),boss=state.bosses.find(b=>b.id===attack.bossId);if(!user||!boss)return;
@@ -853,14 +840,9 @@ document.addEventListener('submit',async e=>{
     if(form.dataset.mode==='edit'){
       const completedUsed=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
       const overlap=party.nikkes.filter(n=>completedUsed.has(n));
-      if(overlap.length)throw new Error(`완료 공격에서 이미 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);
-      const replacements=rebalanceUserPlannedAttacks(user.id,exclude,party);
-      if(!replacements)throw new Error('이 파티를 사용하면 같은 사람의 다른 예정 공격을 중복 없이 다시 구성할 수 없습니다.');
+      if(overlap.length)throw new Error(`이미 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);
       state.plan.attacks[exclude]=attack;
-      for(const [i,repl] of replacements){
-        const oldAttack=state.plan.attacks[i];
-        state.plan.attacks[i]={...oldAttack,partyId:repl.party.id,partyName:repl.party.name,nikkes:[...repl.party.nikkes],element:repl.boss.element,damage:repl.damage};
-      }
+      state.locks=state.locks.filter(l=>!(l.userId===user.id&&l.bossId===boss.id));
     }else{
       const candidate=manualPartyCandidates(boss,-1).find(x=>x.user.id===userId&&x.party.id===partyId);
       if(!candidate||candidate.blocked)throw new Error(candidate?.reason||'현재 사용할 수 없는 파티입니다.');
@@ -868,12 +850,23 @@ document.addEventListener('submit',async e=>{
     }
     const counts=new Map();
     for(const a of state.plan.attacks){counts.set(a.userId,(counts.get(a.userId)||0)+1);a.attackNumber=state.results.filter(r=>r.userId===a.userId).length+counts.get(a.userId);}
-    await saveManualPlan(form.dataset.mode==='edit'?'예정 공격을 변경했고 같은 사람의 다른 예정 스쿼드도 중복 없이 다시 배치했습니다.':'예정 공격을 수동 추가했습니다.');
+    await saveManualPlan(form.dataset.mode==='edit'?'예정 공격을 변경했습니다.':'예정 공격을 수동 추가했습니다.');
     $('attack-detail-dialog').close();
   }catch(error){alert(error.message);}
 });
 document.addEventListener('click',e=>{
   const add=e.target.closest('[data-manual-add-boss]');if(add){openManualAdd(add.dataset.manualAddBoss);return}
+  const lock=e.target.closest('[data-toggle-plan-lock]');if(lock){
+    e.preventDefault();e.stopPropagation();
+    const index=Number(lock.dataset.togglePlanLock),attack=state.plan?.attacks?.[index];
+    if(attack&&!planResultForAttack(attack)){
+      const existing=(state.locks||[]).find(l=>l.userId===attack.userId&&l.partyId===attack.partyId&&l.bossId===attack.bossId);
+      if(existing)state.locks=state.locks.filter(l=>l!==existing);
+      else state.locks.push({id:uid(),userId:attack.userId,partyId:attack.partyId,bossId:attack.bossId});
+      saveShared(existing?'락을 해제했습니다.':'이 예정 공격을 재계산에서 고정했습니다.').then(renderAll).catch(error=>alert(error.message));
+    }
+    return;
+  }
   const del=e.target.closest('[data-delete-plan-index]');if(del){
     e.preventDefault();e.stopPropagation();
     const index=Number(del.dataset.deletePlanIndex),attack=state.plan?.attacks?.[index];
@@ -881,6 +874,7 @@ document.addEventListener('click',e=>{
       const ok=confirm(`${attack.userName} · ${attack.partyName} 예정 공격을 삭제할까요?\n삭제 후 다른 기기에도 바로 반영됩니다.`);
       if(ok){
         state.plan.attacks.splice(index,1);
+        state.locks=state.locks.filter(l=>!(l.userId===attack.userId&&l.partyId===attack.partyId&&l.bossId===attack.bossId));
         saveManualPlan('예정 공격을 삭제했습니다.').then(()=>{if($('attack-detail-dialog')?.open)$('attack-detail-dialog').close();}).catch(error=>alert(error.message));
       }
     }
