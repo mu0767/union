@@ -274,7 +274,7 @@ function renderPlan(plan,target=$('plan-list')){
         ${result?'':`<span class="raid-slot-actions"><span class="raid-slot-delete" data-delete-plan-index="${idx}" title="예정 공격 삭제" aria-label="예정 공격 삭제">×</span></span>`}
         <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong>${result?'<span class="raid-slot-done">완료</span>':''}</div>
         <div class="raid-slot-portraits">${portraits}</div>
-        <small>${a.attackNumber}타${result?' · 실제 딜':''}</small>
+        <small>${a.attackNumber}타</small>
         <b>${result?formatPlannerDamage(a.userId,a.element,Number(result.damage||0),a.round):formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</b>
       </button>
     </div>`;
