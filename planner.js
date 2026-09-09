@@ -275,7 +275,7 @@ function renderPlan(plan,target=$('plan-list')){
         <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong>${result?'<span class="raid-slot-done">완료</span>':''}</div>
         <div class="raid-slot-portraits">${portraits}</div>
         <small>${a.attackNumber}타${result?' · 실제 딜':''}</small>
-        <b>${result?`${displayNumber(result.damage)} (${Math.round(Number(result.damage||0)/Math.max(1,Number(result.plannedDamage??a.damage||1))*100)}%)`:formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</b>
+        <b>${result?formatPlannerDamage(a.userId,a.element,Number(result.damage||0),a.round):formatPlannerDamage(a.userId,a.element,a.damage,a.round)}</b>
       </button>
     </div>`;
   };
