@@ -541,8 +541,7 @@ function manualPartyCandidates(boss,excludeIndex=-1){
       .filter(p=>!p.nikkes.some(n=>usage.used.has(n)))
       .map(p=>({user,party:p,damage:partyDamageForBoss(p,boss)||0,blocked:false,reason:''}))
       .filter(x=>x.damage>0)
-      .sort((a,b)=>b.damage-a.damage)
-      .slice(0,3);
+      .sort((a,b)=>b.damage-a.damage);
     rows.push(...legal);
   }
   return rows.sort((a,b)=>a.user.name.localeCompare(b.user.name)||b.damage-a.damage);
@@ -573,23 +572,72 @@ async function saveManualPlan(message){
   recomputeManualPlanSummary();renderAll();await saveShared(message);
 }
 function manualChoiceOptions(boss,excludeIndex=-1,currentUserId='',currentPartyId=''){
-  return manualPartyCandidates(boss,excludeIndex).map((x,i)=>{
+  return manualPartyCandidates(boss,excludeIndex).map(x=>{
     const selected=x.user.id===currentUserId&&x.party.id===currentPartyId;
-    return `<option value="${escapeHTML(x.user.id)}|${escapeHTML(x.party.id)}" ${selected?'selected':''} ${x.blocked&&!selected?'disabled':''}>${escapeHTML(x.user.name)} · ${escapeHTML(x.party.name)} · ${displayNumber(x.damage)}${x.blocked?' · 사용 불가':''}</option>`;
+    return `<option value="${escapeHTML(x.user.id)}|${escapeHTML(x.party.id)}" ${selected?'selected':''}>${escapeHTML(x.user.name)} · ${escapeHTML(x.party.name)} · ${displayNumber(x.damage)}</option>`;
   }).join('');
+}
+function parseDamageFilter(value){
+  const text=String(value||'').replace(/,/g,'').trim();
+  if(!text)return null;
+  const n=Number(text);return Number.isFinite(n)&&n>=0?n:null;
+}
+function manualAddFilteredCandidates(boss){
+  const root=$('manual-add-picker');if(!root)return [];
+  const name=(root.querySelector('[name=userFilter]')?.value||'').trim().toLowerCase();
+  const min=parseDamageFilter(root.querySelector('[name=minDamage]')?.value);
+  const max=parseDamageFilter(root.querySelector('[name=maxDamage]')?.value);
+  return manualPartyCandidates(boss).filter(x=>
+    (!name||x.user.name.toLowerCase().includes(name))&&
+    (min==null||x.damage>=min)&&
+    (max==null||x.damage<=max)
+  );
+}
+function renderManualAddPicker(bossId,preferredUserId=''){
+  const root=$('manual-add-picker'),boss=state.bosses.find(b=>b.id===bossId);if(!root||!boss)return;
+  const candidates=manualAddFilteredCandidates(boss);
+  const grouped=new Map();
+  for(const x of candidates){if(!grouped.has(x.user.id))grouped.set(x.user.id,{user:x.user,rows:[]});grouped.get(x.user.id).rows.push(x);}
+  const current=root.dataset.userId&&grouped.has(root.dataset.userId)?root.dataset.userId:(preferredUserId&&grouped.has(preferredUserId)?preferredUserId:[...grouped.keys()][0]||'');
+  root.dataset.userId=current;
+  const users=[...grouped.values()];
+  root.querySelector('.manual-user-list').innerHTML=users.length?users.map(g=>`<button type="button" class="manual-user-chip${g.user.id===current?' active':''}" data-manual-user="${escapeHTML(g.user.id)}"><strong>${escapeHTML(g.user.name)}</strong><small>${g.rows.length}개</small></button>`).join(''):'<p class="manual-empty">조건에 맞는 플레이어가 없습니다.</p>';
+  const chosen=grouped.get(current);
+  root.querySelector('.manual-squad-list').innerHTML=chosen?chosen.rows.map(x=>{
+    const portraits=x.party.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
+    return `<button type="button" class="manual-squad-choice${root.dataset.choice===x.user.id+'|'+x.party.id?' selected':''}" data-manual-squad="${escapeHTML(x.user.id)}|${escapeHTML(x.party.id)}">
+      <div class="manual-squad-head"><strong>${escapeHTML(x.party.name)}</strong><b>${displayNumber(x.damage)}</b></div>
+      <div class="manual-squad-portraits">${portraits}</div>
+    </button>`;
+  }).join(''):'';
+  const hidden=root.closest('form')?.elements.choice;
+  if(hidden&&!candidates.some(x=>x.user.id+'|'+x.party.id===root.dataset.choice)){root.dataset.choice='';hidden.value='';}
+  const submit=root.closest('form')?.querySelector('button[type="submit"]');if(submit)submit.disabled=!hidden?.value;
 }
 function openManualAdd(bossId){
   const boss=state.bosses.find(b=>b.id===bossId);if(!boss||!state.plan)return;
-  const options=manualChoiceOptions(boss);
   $('attack-detail-title').textContent=`수동 공격 추가 · R${boss.round===4?'최종':boss.round} ${boss.name}`;
   $('attack-detail-body').innerHTML=`<form id="manual-plan-form" class="manual-plan-form" data-mode="add" data-boss-id="${escapeHTML(boss.id)}">
-    <label>플레이어 / 파티<select name="choice" required>${options}</select></label>
-    <p class="help">같은 속성에서 각 플레이어별 딜 우선순위가 높은 사용 가능 스쿼드만 표시됩니다. 완료·예정 공격에서 이미 사용한 니케가 포함된 스쿼드는 제외됩니다.</p>
-    <div class="manual-plan-actions"><button class="primary">공격 추가</button></div>
+    <input type="hidden" name="choice" value="">
+    <div id="manual-add-picker" class="manual-add-picker" data-boss-id="${escapeHTML(boss.id)}">
+      <div class="manual-add-filters">
+        <label>이름 검색<input name="userFilter" placeholder="플레이어 이름"></label>
+        <label>최소 딜<input name="minDamage" inputmode="numeric" placeholder="제한 없음"></label>
+        <label>최대 딜<input name="maxDamage" inputmode="numeric" placeholder="제한 없음"></label>
+      </div>
+      <p class="help">같은 속성의 사용 가능한 스쿼드만 표시됩니다. 완료·예정 공격에서 이미 사용한 니케가 포함된 스쿼드는 제외됩니다.</p>
+      <div class="manual-add-browser">
+        <div class="manual-user-list"></div>
+        <div class="manual-squad-list"></div>
+      </div>
+    </div>
+    <div class="manual-plan-actions"><button type="submit" class="primary" disabled>선택한 스쿼드 추가</button></div>
   </form>`;
   $('attack-actual-form').hidden=true;
+  renderManualAddPicker(boss.id);
   $('attack-detail-dialog').showModal();
 }
+
 function usedNikkePortraits(names){
   const list=[...names];
   if(!list.length)return '<span class="no-used-nikke">없음</span>';
@@ -714,6 +762,25 @@ $('reset-plan')?.addEventListener('click',async()=>{
   renderAll();
   try{await saveShared('전체 데이터를 초기화했습니다.');}
   catch(error){alert('공유 초기화 저장에 실패했습니다: '+error.message);}
+});
+document.addEventListener('input',e=>{
+  const input=e.target.closest('#manual-add-picker input');if(!input)return;
+  const root=input.closest('#manual-add-picker');renderManualAddPicker(root.dataset.bossId,root.dataset.userId);
+});
+document.addEventListener('click',e=>{
+  const userButton=e.target.closest('[data-manual-user]');
+  if(userButton){
+    const root=userButton.closest('#manual-add-picker');root.dataset.userId=userButton.dataset.manualUser;root.dataset.choice='';
+    const hidden=root.closest('form')?.elements.choice;if(hidden)hidden.value='';
+    renderManualAddPicker(root.dataset.bossId,root.dataset.userId);return;
+  }
+  const squad=e.target.closest('[data-manual-squad]');
+  if(squad){
+    const root=squad.closest('#manual-add-picker'),form=root.closest('form');
+    root.dataset.choice=squad.dataset.manualSquad;form.elements.choice.value=squad.dataset.manualSquad;
+    root.querySelectorAll('[data-manual-squad]').forEach(b=>b.classList.toggle('selected',b===squad));
+    form.querySelector('button[type="submit"]').disabled=false;return;
+  }
 });
 document.addEventListener('submit',async e=>{
   const form=e.target.closest('#manual-plan-form');if(!form)return;
