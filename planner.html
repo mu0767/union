@@ -44,7 +44,10 @@
     <form id="attack-actual-form" class="attack-actual-form">
       <input type="hidden" name="attackIndex">
       <label>실제 딜량<input name="damage" inputmode="numeric" required placeholder="실제 딜 입력"></label>
-      <button class="primary">실제 결과 저장</button>
+      <div class="attack-actual-actions">
+        <button class="primary">실제 결과 저장</button>
+        <button type="button" id="attack-final-blow" class="final-blow-button">막타</button>
+      </div>
     </form>
   </dialog>
 </body>
