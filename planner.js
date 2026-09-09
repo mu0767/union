@@ -101,7 +101,7 @@ function compactPlannerState(){
     results:state.results.map(r=>({
       id:r.id,userName:r.userName||state.users.find(u=>u.id===r.userId)?.name,
       partyName:r.partyName||state.users.find(u=>u.id===r.userId)?.parties.find(p=>p.id===r.partyId)?.name,
-      bossId:r.bossId,damage:r.damage,plannedDamage:r.plannedDamage,planStart:r.planStart,attackNumber:r.attackNumber,at:r.at
+      bossId:r.bossId,damage:r.damage,plannedDamage:r.plannedDamage,planStart:r.planStart,attackNumber:r.attackNumber,at:r.at,finalBlow:!!r.finalBlow
     })),
     locks:(state.locks||[]).map(l=>({
       userName:state.users.find(u=>u.id===l.userId)?.name,
@@ -124,7 +124,7 @@ function expandPlannerState(saved){
   next.results=(saved.results||[]).map(r=>{
     const u=next.users.find(x=>x.name===r.userName),p=u?.parties.find(x=>x.name===r.partyName),b=next.bosses.find(x=>x.id===r.bossId);
     if(!u||!p||!b)return null;
-    return {id:r.id||uid(),userId:u.id,userName:u.name,partyId:p.id,partyName:p.name,nikkes:[...p.nikkes],element:p.element,bossId:b.id,bossName:b.name,round:b.round,damage:Number(r.damage)||0,plannedDamage:r.plannedDamage,planStart:r.planStart,attackNumber:r.attackNumber,at:r.at};
+    return {id:r.id||uid(),userId:u.id,userName:u.name,partyId:p.id,partyName:p.name,nikkes:[...p.nikkes],element:p.element,bossId:b.id,bossName:b.name,round:b.round,damage:Number(r.damage)||0,plannedDamage:r.plannedDamage,planStart:r.planStart,attackNumber:r.attackNumber,at:r.at,finalBlow:!!r.finalBlow};
   }).filter(Boolean);
   next.locks=(saved.locks||[]).map(l=>{
     const u=next.users.find(x=>x.name===l.userName),p=u?.parties.find(x=>x.name===l.partyName),b=next.bosses.find(x=>x.id===l.bossId);
@@ -243,7 +243,7 @@ function completedPlanAttacks(){
       nikkes:[...(r.nikkes||party?.nikkes||[])],bossId:r.bossId,bossName:r.bossName||boss?.name||'삭제된 보스',
       round:r.round||boss?.round||1,element:r.element||party?.element||boss?.element||'',
       damage:r.plannedDamage??r.damage,beforeHp:null,afterHp:null,overkill:0,
-      attackNumber:r.attackNumber||counts.get(r.userId),completed:true,resultId:r.id
+      attackNumber:r.attackNumber||counts.get(r.userId),completed:true,finalBlow:!!r.finalBlow,resultId:r.id
     };
   });
 }
@@ -270,7 +270,7 @@ function renderPlan(plan,target=$('plan-list')){
     const result=planResultForAttack(a);
     const attr=a.completed?`data-result-id="${escapeHTML(a.resultId)}"`:`data-plan-index="${idx}"`;
     return `<div class="raid-slot-stack">
-      <button class="raid-slot-card${result?' completed':(planLockForAttack(a)?' locked':'')}" ${attr}>
+      <button class="raid-slot-card${result?(result.finalBlow?' completed final-blow':' completed'):(planLockForAttack(a)?' locked':'')}" ${attr}>
         ${result?'':`<span class="raid-slot-actions"><span class="raid-slot-delete" data-delete-plan-index="${idx}" title="예정 공격 삭제" aria-label="예정 공격 삭제">×</span></span>`}
         <div class="raid-slot-top"><strong>${escapeHTML(a.userName)}</strong>${result?'<span class="raid-slot-done">완료</span>':''}</div>
         <div class="raid-slot-portraits">${portraits}</div>
@@ -287,6 +287,7 @@ function renderPlan(plan,target=$('plan-list')){
     a.round-b.round||
     (bossOrder.get(a.bossId)??999)-(bossOrder.get(b.bossId)??999)||
     Number(!a.completed)-Number(!b.completed)||
+    Number(!!a.finalBlow)-Number(!!b.finalBlow)||
     a.attackNumber-b.attackNumber||
     a.userName.localeCompare(b.userName)
   );
@@ -727,7 +728,6 @@ function openCompletedAttackDetail(resultId){
     <div class="attack-party-choices"><strong>같은 속성 다른 조합</strong><p class="help">다른 완료 공격에서 이미 사용한 니케가 겹치면 선택할 수 없습니다.</p>${partyChoiceHTML(user,boss,result.partyId,resultId)}</div>
     <div class="attack-detail-used"><strong>사용한 니케</strong>${usedNikkePortraits(used)}</div>
     <div class="completed-attack-actions">
-      <button type="button" data-result-final-blow="${escapeHTML(resultId)}">막타</button>
       <button type="button" class="danger" data-result-undo="${escapeHTML(resultId)}">완료 해제</button>
     </div>`;
   const f=$('attack-actual-form');f.dataset.resultId=resultId;f.dataset.partyId=result.partyId;f.elements.attackIndex.value='';f.elements.damage.value=displayNumber(result.damage);
@@ -748,7 +748,7 @@ async function saveActualFromPlan(index,damage){
   const used=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
   const overlap=party.nikkes.filter(n=>used.has(n));if(overlap.length)throw new Error(`이미 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);
   user.attacksLeft--;
-  state.results.push({id:uid(),userId:user.id,userName:user.name,partyId:party.id,partyName:party.name,nikkes:[...party.nikkes],element:party.element,bossId:boss.id,bossName:boss.name,round:boss.round,damage,plannedDamage:attack.damage,planStart:attack.start,attackNumber:attack.attackNumber,at:new Date().toISOString()});
+  state.results.push({id:uid(),userId:user.id,userName:user.name,partyId:party.id,partyName:party.name,nikkes:[...party.nikkes],element:party.element,bossId:boss.id,bossName:boss.name,round:boss.round,damage,plannedDamage:attack.damage,planStart:attack.start,attackNumber:attack.attackNumber,at:new Date().toISOString(),finalBlow:false});
   state.locks=state.locks.filter(l=>!(l.userId===user.id&&l.partyId===party.id&&l.bossId===boss.id));
   await saveShared('실제 공격 결과를 저장했습니다. 완료 셀로 표시했으며 공격권·사용 니케에도 반영했습니다.');renderAll();
 }
@@ -835,11 +835,29 @@ async function markFinalBlow(resultId){
   const boss=state.bosses.find(b=>b.id===result.bossId);if(!boss)throw new Error('보스를 찾을 수 없습니다.');
   if(boss.hp==='infinite')throw new Error('최종보스에는 막타를 적용할 수 없습니다.');
   const before=Math.max(0,Number(boss.hp||0)-bossDamageExcludingResult(boss.id,result.id));
+  if(before<=0)throw new Error('이미 처치된 보스입니다.');
   result.damage=before;
+  result.finalBlow=true;
   result.at=new Date().toISOString();
-  state.plan=null;
-  await saveShared('막타로 처리했습니다. 남은 HP를 실제 딜로 기록하고 다시 계산합니다.');
-  renderAll();$('attack-detail-dialog').close();setTimeout(()=>calculate(),0);
+  await saveShared('막타로 처리했습니다. 남은 HP를 실제 딜로 기록했습니다.');
+  renderAll();$('attack-detail-dialog').close();
+}
+async function saveFinalBlowFromPlan(index){
+  const attack=state.plan?.attacks?.[index];if(!attack)throw new Error('계획 공격을 찾을 수 없습니다.');
+  const user=state.users.find(u=>u.id===attack.userId),party=user?.parties.find(p=>p.id===attack.partyId),boss=state.bosses.find(b=>b.id===attack.bossId);
+  if(!user||!party||!boss)throw new Error('공격 정보를 찾을 수 없습니다.');
+  if(boss.hp==='infinite')throw new Error('최종보스에는 막타를 적용할 수 없습니다.');
+  if(user.attacksLeft<=0)throw new Error('남은 공격권이 없습니다.');
+  const progress=raidProgress();if(!progress.bosses.some(b=>b.id===boss.id&&!b.clear))throw new Error('현재 공격 가능한 보스가 아닙니다.');
+  const used=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
+  const overlap=party.nikkes.filter(n=>used.has(n));if(overlap.length)throw new Error(`이미 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);
+  const damage=Math.max(0,Number(boss.hp||0)-(state.results.filter(r=>r.bossId===boss.id).reduce((s,r)=>s+Number(r.damage||0),0)));
+  if(damage<=0)throw new Error('이미 처치된 보스입니다.');
+  user.attacksLeft--;
+  state.results.push({id:uid(),userId:user.id,userName:user.name,partyId:party.id,partyName:party.name,nikkes:[...party.nikkes],element:party.element,bossId:boss.id,bossName:boss.name,round:boss.round,damage,plannedDamage:attack.damage,planStart:attack.start,attackNumber:attack.attackNumber,at:new Date().toISOString(),finalBlow:true});
+  state.locks=state.locks.filter(l=>!(l.userId===user.id&&l.partyId===party.id&&l.bossId===boss.id));
+  await saveShared('막타로 완료 처리했습니다. 남은 HP를 실제 딜로 기록했습니다.');
+  renderAll();$('attack-detail-dialog').close();
 }
 document.addEventListener('click',e=>{
   const plannedParty=e.target.closest('[data-planned-party]');
@@ -940,13 +958,26 @@ document.addEventListener('click',e=>{
   const card=e.target.closest('[data-plan-index]');if(card)openAttackDetail(Number(card.dataset.planIndex));
 });
 $('attack-detail-close')?.addEventListener('click',()=>{$('attack-actual-form').hidden=false;$('attack-detail-dialog').close();});
+$('attack-final-blow')?.addEventListener('click',async ()=>{
+  const f=$('attack-actual-form');
+  try{
+    if(f.dataset.resultId){
+      if(!confirm('이 완료 공격을 막타로 처리할까요? 남은 HP가 실제 딜로 자동 기록됩니다.'))return;
+      await markFinalBlow(f.dataset.resultId);
+    }else{
+      const index=Number(f.elements.attackIndex.value);
+      if(!confirm('이 공격을 막타로 완료 처리할까요? 남은 HP가 실제 딜로 자동 기록됩니다.'))return;
+      await saveFinalBlowFromPlan(index);
+    }
+  }catch(error){alert(error.message);}
+});
 $('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=e.target,damage=Number(f.elements.damage.value.replace(/,/g,''));if(!Number.isSafeInteger(damage)||damage<0)return alert('실제 딜량은 0 이상의 정수여야 합니다.');try{
   if(f.dataset.resultId){
     const result=state.results.find(r=>r.id===f.dataset.resultId);if(!result)throw new Error('완료 공격을 찾을 수 없습니다.');
     const user=state.users.find(u=>u.id===result.userId),boss=state.bosses.find(b=>b.id===result.bossId),party=user?.parties.find(p=>p.id===f.dataset.partyId);
     if(!user||!boss||!party||party.element!==boss.element)throw new Error('선택한 조합이 현재 보스 속성과 맞지 않습니다.');
     const used=completedOtherUsedNikkes(user.id,result.id),overlap=party.nikkes.filter(n=>used.has(n));if(overlap.length)throw new Error(`이미 완료한 공격에서 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);
-    result.partyId=party.id;result.partyName=party.name;result.nikkes=[...party.nikkes];result.element=party.element;result.plannedDamage=partyDamageForBoss(party,boss)||0;result.damage=damage;result.at=new Date().toISOString();
+    result.partyId=party.id;result.partyName=party.name;result.nikkes=[...party.nikkes];result.element=party.element;result.plannedDamage=partyDamageForBoss(party,boss)||0;result.damage=damage;result.finalBlow=false;result.at=new Date().toISOString();
     state.plan=null;
     await saveShared('완료 공격의 조합과 실제 딜을 수정했습니다. 남은 계획을 다시 계산합니다.');
     renderAll();
