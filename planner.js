@@ -722,7 +722,11 @@ function openCompletedAttackDetail(resultId){
   $('attack-detail-body').innerHTML=`
     <div class="attack-detail-current"><strong>완료된 공격</strong><p>예상 ${displayNumber(result.plannedDamage??attack.damage)} · 실제 ${displayNumber(result.damage)} · ${attack.attackNumber}타</p></div>
     <div class="attack-party-choices"><strong>같은 속성 다른 조합</strong><p class="help">다른 완료 공격에서 이미 사용한 니케가 겹치면 선택할 수 없습니다.</p>${partyChoiceHTML(user,boss,result.partyId,resultId)}</div>
-    <div class="attack-detail-used"><strong>사용한 니케</strong>${usedNikkePortraits(used)}</div>`;
+    <div class="attack-detail-used"><strong>사용한 니케</strong>${usedNikkePortraits(used)}</div>
+    <div class="completed-attack-actions">
+      <button type="button" data-result-final-blow="${escapeHTML(resultId)}">막타</button>
+      <button type="button" class="danger" data-result-undo="${escapeHTML(resultId)}">완료 해제</button>
+    </div>`;
   const f=$('attack-actual-form');f.dataset.resultId=resultId;f.dataset.partyId=result.partyId;f.elements.attackIndex.value='';f.elements.damage.value=displayNumber(result.damage);
   f.querySelector('button').textContent='변경 저장 후 재계산';
   $('attack-detail-dialog').showModal();
@@ -812,6 +816,29 @@ document.addEventListener('input',e=>{
   const input=e.target.closest('#manual-add-picker input');if(!input)return;
   const root=input.closest('#manual-add-picker');renderManualAddPicker(root.dataset.bossId,root.dataset.userId);
 });
+function bossDamageExcludingResult(bossId,resultId){
+  return state.results.filter(r=>r.bossId===bossId&&r.id!==resultId).reduce((s,r)=>s+Number(r.damage||0),0);
+}
+async function undoCompletedResult(resultId){
+  const index=state.results.findIndex(r=>r.id===resultId);if(index<0)throw new Error('완료 공격을 찾을 수 없습니다.');
+  const result=state.results[index],user=state.users.find(u=>u.id===result.userId);
+  state.results.splice(index,1);
+  if(user)user.attacksLeft=Math.min(3,Number(user.attacksLeft||0)+1);
+  state.plan=null;
+  await saveShared('완료 공격을 해제했습니다. 남은 계획을 다시 계산합니다.');
+  renderAll();$('attack-detail-dialog').close();setTimeout(()=>calculate(),0);
+}
+async function markFinalBlow(resultId){
+  const result=state.results.find(r=>r.id===resultId);if(!result)throw new Error('완료 공격을 찾을 수 없습니다.');
+  const boss=state.bosses.find(b=>b.id===result.bossId);if(!boss)throw new Error('보스를 찾을 수 없습니다.');
+  if(boss.hp==='infinite')throw new Error('최종보스에는 막타를 적용할 수 없습니다.');
+  const before=Math.max(0,Number(boss.hp||0)-bossDamageExcludingResult(boss.id,result.id));
+  result.damage=before;
+  result.at=new Date().toISOString();
+  state.plan=null;
+  await saveShared('막타로 처리했습니다. 남은 HP를 실제 딜로 기록하고 다시 계산합니다.');
+  renderAll();$('attack-detail-dialog').close();setTimeout(()=>calculate(),0);
+}
 document.addEventListener('click',e=>{
   const plannedParty=e.target.closest('[data-planned-party]');
   if(plannedParty){
@@ -863,6 +890,14 @@ document.addEventListener('submit',async e=>{
   }catch(error){alert(error.message);}
 });
 document.addEventListener('click',e=>{
+  const finalBlow=e.target.closest('[data-result-final-blow]');if(finalBlow){
+    if(confirm('이 공격을 막타로 처리할까요? 현재 남은 HP가 실제 딜로 기록됩니다.'))markFinalBlow(finalBlow.dataset.resultFinalBlow).catch(error=>alert(error.message));
+    return;
+  }
+  const undo=e.target.closest('[data-result-undo]');if(undo){
+    if(confirm('이 완료 공격을 해제할까요? 공격권도 1회 되돌아갑니다.'))undoCompletedResult(undo.dataset.resultUndo).catch(error=>alert(error.message));
+    return;
+  }
   const add=e.target.closest('[data-manual-add-boss]');if(add){openManualAdd(add.dataset.manualAddBoss);return}
   const lock=e.target.closest('[data-toggle-plan-lock]');if(lock){
     e.preventDefault();e.stopPropagation();
