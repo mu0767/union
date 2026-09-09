@@ -679,7 +679,7 @@ function openAttackDetail(index){
       <div class="planned-party-list">${plannedPartyChoiceHTML(user,boss,attack.partyId,index)}</div>
       <div class="manual-plan-actions"><button class="primary">계획 변경</button></div>
     </form>
-    <div class="attack-detail-used"><strong>이 플레이어가 완료 공격에서 이미 사용한 니케</strong>${usedNikkePortraits(used)}</div>`;
+    <div class="attack-detail-used"><strong>사용한 니케</strong>${usedNikkePortraits(used)}</div>`;
   const f=$('attack-actual-form');f.hidden=false;delete f.dataset.resultId;f.elements.attackIndex.value=String(index);f.elements.damage.value=displayNumber(attack.damage);
   f.querySelector('button').textContent='실제 결과 저장';
   $('attack-detail-dialog').showModal();
@@ -707,7 +707,7 @@ function openCompletedAttackDetail(resultId){
   $('attack-detail-body').innerHTML=`
     <div class="attack-detail-current"><strong>완료된 공격</strong><p>예상 ${displayNumber(result.plannedDamage??attack.damage)} · 실제 ${displayNumber(result.damage)} · ${attack.attackNumber}타</p></div>
     <div class="attack-party-choices"><strong>같은 속성 다른 조합</strong><p class="help">다른 완료 공격에서 이미 사용한 니케가 겹치면 선택할 수 없습니다.</p>${partyChoiceHTML(user,boss,result.partyId,resultId)}</div>
-    <div class="attack-detail-used"><strong>이전 완료 공격에서 이미 사용한 니케</strong>${usedNikkePortraits(used)}</div>`;
+    <div class="attack-detail-used"><strong>사용한 니케</strong>${usedNikkePortraits(used)}</div>`;
   const f=$('attack-actual-form');f.dataset.resultId=resultId;f.dataset.partyId=result.partyId;f.elements.attackIndex.value='';f.elements.damage.value=displayNumber(result.damage);
   f.querySelector('button').textContent='변경 저장 후 재계산';
   $('attack-detail-dialog').showModal();
