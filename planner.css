@@ -151,3 +151,10 @@
   .raid-slot-card{padding:8px}
   .raid-slot-top strong{font-size:11px}
 }
+
+.raid-slot-actions{position:absolute;top:4px;right:5px;z-index:4;display:flex;gap:4px;align-items:center}
+.raid-slot-actions .raid-slot-delete,.raid-slot-actions .raid-slot-lock{position:static;width:20px;height:20px;border-radius:999px;display:grid;place-items:center;font-size:13px;line-height:1;background:rgba(8,10,15,.62);border:1px solid rgba(255,255,255,.12);cursor:pointer}
+.raid-slot-lock{color:#9da8bb}.raid-slot-lock.active{color:#ffd76a;border-color:rgba(255,215,106,.45);background:rgba(95,75,20,.5)}
+.planned-party-choice.blocked{border-color:rgba(255,95,95,.45);background:rgba(120,24,30,.13);opacity:.72;cursor:not-allowed}
+.planned-party-choice.blocked em{grid-column:1/-1;color:#ff8c8c;font-size:10px;font-style:normal}
+.planned-party-portrait.used-nikke{outline:2px solid rgba(255,80,80,.72);border-radius:7px;filter:saturate(.35);opacity:.68}
