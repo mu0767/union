@@ -212,3 +212,29 @@
   .raid-slot-card{padding:10px 8px 13px}
   .raid-slot-card b{font-size:12px;overflow:visible;text-overflow:clip}
 }
+
+/* Party change picker: one squad per row so portraits and damage never overlap. */
+.attack-party-choices .planned-party-choice{
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) max-content;
+  align-items:center;
+  width:100%;
+  min-width:0;
+  gap:12px;
+}
+.attack-party-choices .planned-party-portraits{
+  min-width:0;
+  display:flex;
+  flex-wrap:nowrap;
+  overflow:hidden;
+}
+.attack-party-choices .planned-party-choice>strong{
+  white-space:nowrap;
+  text-align:right;
+}
+@media(max-width:700px){
+  .attack-party-choices .planned-party-choice{
+    grid-template-columns:minmax(0,1fr) max-content;
+    gap:8px;
+  }
+}
