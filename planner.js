@@ -652,6 +652,20 @@ function usedNikkePortraits(names){
   if(!list.length)return '<span class="no-used-nikke">없음</span>';
   return `<div class="used-nikke-portraits">${list.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span title="${escapeHTML(n)}">${escapeHTML(n)}</span>`;}).join('')}</div>`;
 }
+function plannedPartyChoiceHTML(user,boss,currentPartyId,index){
+  const usage=plannedUsageForUser(user.id,index);
+  return (user.parties||[])
+    .filter(p=>p.element===boss.element)
+    .filter(p=>p.id===currentPartyId||!p.nikkes.some(n=>usage.used.has(n)))
+    .map(p=>{
+      const damage=partyDamageForBoss(p,boss)||0;
+      const portraits=p.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
+      return `<button type="button" class="planned-party-choice${p.id===currentPartyId?' selected':''}" data-planned-party="${escapeHTML(p.id)}">
+        <div class="planned-party-portraits">${portraits}</div>
+        <strong>${displayNumber(damage)}</strong>
+      </button>`;
+    }).join('');
+}
 function openAttackDetail(index){
   const attack=state.plan?.attacks?.[index];if(!attack)return;
   const user=state.users.find(u=>u.id===attack.userId),boss=state.bosses.find(b=>b.id===attack.bossId);if(!user||!boss)return;
@@ -659,8 +673,10 @@ function openAttackDetail(index){
   $('attack-detail-title').textContent=`${user.name} · R${attack.round===4?'최종':attack.round} ${attack.bossName}`;
   $('attack-detail-body').innerHTML=`
     <div class="attack-detail-current"><strong>예정 공격</strong><p>${formatPlannerDamage(attack.userId,attack.element,attack.damage,attack.round)} · ${attack.attackNumber}타</p><div class="attack-detail-portraits">${attack.nikkes.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span>${escapeHTML(n)}</span>`;}).join('')}</div></div>
-    <form id="manual-plan-form" class="manual-plan-form" data-mode="edit" data-index="${index}" data-boss-id="${escapeHTML(boss.id)}">
-      <label>플레이어 / 파티<select name="choice" required>${manualChoiceOptions(boss,index,attack.userId,attack.partyId)}</select></label>
+    <form id="manual-plan-form" class="manual-plan-form" data-mode="edit" data-index="${index}" data-boss-id="${escapeHTML(boss.id)}" data-user-id="${escapeHTML(user.id)}">
+      <input type="hidden" name="choice" value="${escapeHTML(user.id)}|${escapeHTML(attack.partyId)}">
+      <strong>파티 변경</strong>
+      <div class="planned-party-list">${plannedPartyChoiceHTML(user,boss,attack.partyId,index)}</div>
       <div class="manual-plan-actions"><button class="primary">계획 변경</button></div>
     </form>
     <div class="attack-detail-used"><strong>이 플레이어가 완료 공격에서 이미 사용한 니케</strong>${usedNikkePortraits(used)}</div>`;
@@ -777,6 +793,15 @@ document.addEventListener('input',e=>{
   const root=input.closest('#manual-add-picker');renderManualAddPicker(root.dataset.bossId,root.dataset.userId);
 });
 document.addEventListener('click',e=>{
+  const plannedParty=e.target.closest('[data-planned-party]');
+  if(plannedParty){
+    const form=plannedParty.closest('#manual-plan-form'),userId=form?.dataset.userId;
+    if(form&&userId){
+      form.elements.choice.value=userId+'|'+plannedParty.dataset.plannedParty;
+      form.querySelectorAll('[data-planned-party]').forEach(b=>b.classList.toggle('selected',b===plannedParty));
+    }
+    return;
+  }
   const userButton=e.target.closest('[data-manual-user]');
   if(userButton){
     const root=userButton.closest('#manual-add-picker');root.dataset.userId=userButton.dataset.manualUser;root.dataset.choice='';
