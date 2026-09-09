@@ -199,3 +199,6 @@
     min-height:0 !important;
   }
 }
+
+.completed-attack-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.completed-attack-actions .danger{border-color:#7a3535;color:#ff9b9b;background:#2a1719}
