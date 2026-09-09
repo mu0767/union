@@ -296,7 +296,11 @@ function renderPlan(plan,target=$('plan-list')){
       const bosses=state.bosses.filter(b=>b.round===round).sort((a,b)=>BOSS_DISPLAY_ORDER.indexOf(a.element)-BOSS_DISPLAY_ORDER.indexOf(b.element));
       const rows=Math.max(1,...bosses.map(b=>attacks.filter(a=>a.bossId===b.id).length));
       const cumulativeAttacks=ordered.filter(a=>a.round<=round);
-      const remaining=bosses.map(b=>{
+      const currentHp=bosses.map(b=>{
+        if(b.hp==='infinite')return '∞';
+        return displayNumber(Math.max(0,b.hp-(baseDamage[b.id]||0)));
+      });
+      const plannedHp=bosses.map(b=>{
         if(b.hp==='infinite')return '∞';
         const planned=cumulativeAttacks.filter(a=>a.bossId===b.id&&!planResultForAttack(a)).reduce((s,a)=>s+a.damage,0);
         return displayNumber(Math.max(0,b.hp-(baseDamage[b.id]||0)-planned));
@@ -320,7 +324,8 @@ function renderPlan(plan,target=$('plan-list')){
           if(row===bossAttacks.length)return `<div class="raid-board-cell"><button type="button" class="raid-slot-card raid-slot-add-card" data-manual-add-boss="${escapeHTML(b.id)}" title="${row+1}번 공격 추가">＋</button></div>`;
           return '<div class="raid-board-cell"></div>';
         }).join('')}</div>`).join('')}
-        <div class="raid-board-footer"><span>남은 HP</span>${remaining.map(v=>`<strong>${v}</strong>`).join('')}</div>
+        <div class="raid-board-footer"><span>현재 HP</span>${currentHp.map(v=>`<strong>${v}</strong>`).join('')}</div>
+        <div class="raid-board-footer"><span>예정 HP</span>${plannedHp.map(v=>`<strong>${v}</strong>`).join('')}</div>
         <div class="raid-board-footer raid-board-overkill"><span>오버딜</span>${overkill.map(v=>`<strong>${v}</strong>`).join('')}</div>
       </div></div>`;
   }).join('');
