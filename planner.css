@@ -202,3 +202,13 @@
 
 .completed-attack-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .completed-attack-actions .danger{border-color:#7a3535;color:#ff9b9b;background:#2a1719}
+
+/* Give attack cards enough vertical room for full damage text. */
+.raid-board-cell{height:136px;min-height:136px}
+.raid-slot-card{padding-bottom:12px}
+.raid-slot-card b{display:block;overflow:visible;text-overflow:clip;white-space:nowrap;line-height:1.25}
+@media(max-width:700px){
+  .raid-board-cell{height:148px !important;min-height:148px !important}
+  .raid-slot-card{padding:10px 8px 13px}
+  .raid-slot-card b{font-size:12px;overflow:visible;text-overflow:clip}
+}
