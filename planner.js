@@ -781,7 +781,7 @@ async function calculate(){
     state.plan=plan;
     renderSchedule();
     renderLive();
-    localSave(`CP-SAT 계산 완료 · ${plan.attacks.length}개 공격 · ${plan.summary.reachedFinal?'최종보스 딜':`R${plan.summary.reachedRound} 유효 딜`} ${displayNumber(plan.summary.targetDamage)} · 총 오버딜 ${displayNumber(plan.summary.totalOverkill)}`);
+    await saveShared(`CP-SAT 계산 완료 · ${plan.attacks.length}개 공격 · ${plan.summary.reachedFinal?'최종보스 딜':`R${plan.summary.reachedRound} 유효 딜`} ${displayNumber(plan.summary.targetDamage)} · 총 오버딜 ${displayNumber(plan.summary.totalOverkill)}`);
   }catch(error){
     $('planner-status').textContent=`계산 실패: ${error.message}`;
   }finally{
@@ -803,7 +803,12 @@ $('reset-plan')?.addEventListener('click',async()=>{
   try{await saveShared('전체 데이터를 초기화했습니다.');}
   catch(error){alert('공유 초기화 저장에 실패했습니다: '+error.message);}
 });
+function formatNumericInput(input){
+  const digits=String(input.value||'').replace(/\D/g,'');
+  input.value=digits?Number(digits).toLocaleString('en-US'):'';
+}
 document.addEventListener('input',e=>{
+  if(e.target.matches('#attack-actual-form [name="damage"]')){formatNumericInput(e.target);return;}
   const input=e.target.closest('#manual-add-picker input');if(!input)return;
   const root=input.closest('#manual-add-picker');renderManualAddPicker(root.dataset.bossId,root.dataset.userId);
 });
@@ -905,9 +910,11 @@ $('attack-actual-form')?.addEventListener('submit',async e=>{e.preventDefault();
     if(!user||!boss||!party||party.element!==boss.element)throw new Error('선택한 조합이 현재 보스 속성과 맞지 않습니다.');
     const used=completedOtherUsedNikkes(user.id,result.id),overlap=party.nikkes.filter(n=>used.has(n));if(overlap.length)throw new Error(`이미 완료한 공격에서 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);
     result.partyId=party.id;result.partyName=party.name;result.nikkes=[...party.nikkes];result.element=party.element;result.plannedDamage=partyDamageForBoss(party,boss)||0;result.damage=damage;result.at=new Date().toISOString();
-    state.plan=null;await saveShared('완료 공격의 조합과 실제 딜을 수정했습니다. 남은 계획을 다시 계산합니다.');renderAll();
+    state.plan=null;
+    await saveShared('완료 공격의 조합과 실제 딜을 수정했습니다. 남은 계획을 다시 계산합니다.');
+    renderAll();
     $('attack-detail-dialog').close();
-    setTimeout(()=>$('calculate')?.click(),0);
+    setTimeout(()=>calculate(),0);
   }else{
     await saveActualFromPlan(Number(f.elements.attackIndex.value),damage);$('attack-detail-dialog').close();
   }
