@@ -247,6 +247,9 @@ function completedPlanAttacks(){
     };
   });
 }
+function planLockForAttack(attack){
+  return (state.locks||[]).find(l=>l.userId===attack.userId&&l.partyId===attack.partyId&&l.bossId===attack.bossId)||null;
+}
 function renderPlan(plan,target=$('plan-list')){
   if(!plan?.length){target.className='plan-list empty-card';target.innerHTML='표시할 추천 공격이 없습니다.';return}
   target.className='plan-list';
@@ -261,7 +264,6 @@ function renderPlan(plan,target=$('plan-list')){
   }
 
   const baseDamage={};for(const r of state.results)baseDamage[r.bossId]=(baseDamage[r.bossId]||0)+Number(r.damage||0);
-  const planLockForAttack=a=>(state.locks||[]).find(l=>l.userId===a.userId&&l.partyId===a.partyId&&l.bossId===a.bossId);
   const attackCard=a=>{
     const idx=state.plan?.attacks?.indexOf(a)??-1;
     const portraits=a.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
