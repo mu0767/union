@@ -38,10 +38,18 @@ export async function solveRaidHybrid(state,progress=()=>{},emitPlan=()=>{}){
     }
   }
   const rawByKey=new Map(raw.map(c=>[candidateKey(c),c]));
-  const selected=(base.attacks||[]).map(a=>rawByKey.get(`${a.userId}|${a.partyId}|${a.bossId}`)).filter(Boolean);
-  if(!selected.length)return base;
-
   const locks=new Set((state.locks||[]).map(l=>`${l.userId}|${l.partyId}|${l.bossId}`));
+  const selected=(base.attacks||[]).map(a=>rawByKey.get(`${a.userId}|${a.partyId}|${a.bossId}`)).filter(Boolean);
+  // A lock is a hard reservation. The base solver may omit it, so inject every
+  // still-valid locked candidate before local improvement instead of merely
+  // protecting locks that happened to survive the base solution.
+  const selectedKeys=new Set(selected.map(candidateKey));
+  for(const key of locks){
+    const locked=rawByKey.get(key);
+    if(!locked)throw new Error('락된 예정 공격을 현재 조건에서 유지할 수 없습니다. 완료 공격의 사용 니케나 공격권을 확인해 주세요.');
+    if(!selectedKeys.has(key)){selected.push(locked);selectedKeys.add(key);}
+  }
+  if(!selected.length)return base;
   const isValid=sel=>{
     const seen=new Set();
     for(const c of sel){const k=candidateKey(c);if(seen.has(k))return false;seen.add(k);}
