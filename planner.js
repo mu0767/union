@@ -824,9 +824,8 @@ async function undoCompletedResult(resultId){
   const result=state.results[index],user=state.users.find(u=>u.id===result.userId);
   state.results.splice(index,1);
   if(user)user.attacksLeft=Math.min(3,Number(user.attacksLeft||0)+1);
-  state.plan=null;
-  await saveShared('완료 공격을 해제했습니다. 남은 계획을 다시 계산합니다.');
-  renderAll();$('attack-detail-dialog').close();setTimeout(()=>calculate(),0);
+  await saveShared('완료 공격을 해제했습니다.');
+  renderAll();$('attack-detail-dialog').close();
 }
 async function markFinalBlow(resultId){
   const result=state.results.find(r=>r.id===resultId);if(!result)throw new Error('완료 공격을 찾을 수 없습니다.');
