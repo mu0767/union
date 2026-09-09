@@ -121,3 +121,11 @@
   .raid-board-cell>.raid-slot-stack,
   .raid-slot-add-card{min-height:80px !important}
 }
+
+.planned-party-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.planned-party-choice{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px;border:1px solid rgba(255,255,255,.1);border-radius:9px;background:rgba(255,255,255,.025);color:inherit;cursor:pointer}
+.planned-party-choice.selected{border-color:#7aa2ff;background:rgba(122,162,255,.11);box-shadow:inset 0 0 0 1px rgba(122,162,255,.18)}
+.planned-party-choice strong{font-size:12px;white-space:nowrap}
+.planned-party-portraits{display:flex;gap:3px;min-width:0}
+.planned-party-portraits img,.planned-party-portraits span{width:34px;height:34px;border-radius:7px;object-fit:cover}
+.planned-party-portraits span{display:grid;place-items:center;background:rgba(255,255,255,.07);font-size:10px}
