@@ -653,10 +653,10 @@ function usedNikkePortraits(names){
   return `<div class="used-nikke-portraits">${list.map(n=>{const src=characterImage(n);return src?`<figure><img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}"><figcaption>${escapeHTML(n)}</figcaption></figure>`:`<span title="${escapeHTML(n)}">${escapeHTML(n)}</span>`;}).join('')}</div>`;
 }
 function plannedPartyChoiceHTML(user,boss,currentPartyId,index){
-  const usage=plannedUsageForUser(user.id,index);
+  const completedUsed=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
   return (user.parties||[])
     .filter(p=>p.element===boss.element)
-    .filter(p=>p.id===currentPartyId||!p.nikkes.some(n=>usage.used.has(n)))
+    .filter(p=>p.id===currentPartyId||!p.nikkes.some(n=>completedUsed.has(n)))
     .map(p=>{
       const damage=partyDamageForBoss(p,boss)||0;
       const portraits=p.nikkes.map(n=>{const src=characterImage(n);return src?`<img src="${escapeHTML(src)}" alt="${escapeHTML(n)}" title="${escapeHTML(n)}">`:`<span title="${escapeHTML(n)}">${escapeHTML(n.slice(0,1))}</span>`;}).join('');
@@ -666,6 +666,31 @@ function plannedPartyChoiceHTML(user,boss,currentPartyId,index){
       </button>`;
     }).join('');
 }
+function rebalanceUserPlannedAttacks(userId,changedIndex,newParty){
+  const user=state.users.find(u=>u.id===userId);if(!user)return null;
+  const completedUsed=new Set(state.results.filter(r=>r.userId===userId).flatMap(r=>r.nikkes||[]));
+  if(newParty.nikkes.some(n=>completedUsed.has(n)))return null;
+  const used=new Set([...completedUsed,...newParty.nikkes]);
+  const replacements=new Map();
+  const others=(state.plan?.attacks||[])
+    .map((a,i)=>({a,i}))
+    .filter(x=>x.i!==changedIndex&&x.a.userId===userId&&!planResultForAttack(x.a))
+    .sort((x,y)=>y.a.damage-x.a.damage);
+  for(const {a,i} of others){
+    const boss=state.bosses.find(b=>b.id===a.bossId);if(!boss)return null;
+    const choices=(user.parties||[])
+      .filter(p=>p.element===boss.element)
+      .filter(p=>!p.nikkes.some(n=>used.has(n)))
+      .map(p=>({p,damage:partyDamageForBoss(p,boss)||0}))
+      .filter(x=>x.damage>0)
+      .sort((x,y)=>y.damage-x.damage);
+    const best=choices[0];if(!best)return null;
+    best.p.nikkes.forEach(n=>used.add(n));
+    replacements.set(i,{party:best.p,damage:best.damage,boss});
+  }
+  return replacements;
+}
+
 function openAttackDetail(index){
   const attack=state.plan?.attacks?.[index];if(!attack)return;
   const user=state.users.find(u=>u.id===attack.userId),boss=state.bosses.find(b=>b.id===attack.bossId);if(!user||!boss)return;
@@ -824,13 +849,26 @@ document.addEventListener('submit',async e=>{
     const user=state.users.find(u=>u.id===userId),party=user?.parties.find(p=>p.id===partyId),boss=state.bosses.find(b=>b.id===form.dataset.bossId);
     if(!user||!party||!boss||party.element!==boss.element)throw new Error('선택한 공격 정보를 찾을 수 없습니다.');
     const exclude=form.dataset.mode==='edit'?Number(form.dataset.index):-1;
-    const candidate=manualPartyCandidates(boss,exclude).find(x=>x.user.id===userId&&x.party.id===partyId);
-    if(!candidate||candidate.blocked)throw new Error(candidate?.reason||'현재 사용할 수 없는 파티입니다.');
     const attack={start:state.settings?.startAt,timeLabel:'',isNow:false,userId:user.id,userName:user.name,partyId:party.id,partyName:party.name,nikkes:[...party.nikkes],bossId:boss.id,bossName:boss.name,round:boss.round,element:boss.element,damage:partyDamageForBoss(party,boss)||0,beforeHp:null,afterHp:null,overkill:0,attackNumber:1};
-    if(form.dataset.mode==='edit')state.plan.attacks[exclude]=attack;else state.plan.attacks.push(attack);
+    if(form.dataset.mode==='edit'){
+      const completedUsed=new Set(state.results.filter(r=>r.userId===user.id).flatMap(r=>r.nikkes||[]));
+      const overlap=party.nikkes.filter(n=>completedUsed.has(n));
+      if(overlap.length)throw new Error(`완료 공격에서 이미 사용한 니케가 포함되어 있습니다: ${overlap.join(', ')}`);
+      const replacements=rebalanceUserPlannedAttacks(user.id,exclude,party);
+      if(!replacements)throw new Error('이 파티를 사용하면 같은 사람의 다른 예정 공격을 중복 없이 다시 구성할 수 없습니다.');
+      state.plan.attacks[exclude]=attack;
+      for(const [i,repl] of replacements){
+        const oldAttack=state.plan.attacks[i];
+        state.plan.attacks[i]={...oldAttack,partyId:repl.party.id,partyName:repl.party.name,nikkes:[...repl.party.nikkes],element:repl.boss.element,damage:repl.damage};
+      }
+    }else{
+      const candidate=manualPartyCandidates(boss,-1).find(x=>x.user.id===userId&&x.party.id===partyId);
+      if(!candidate||candidate.blocked)throw new Error(candidate?.reason||'현재 사용할 수 없는 파티입니다.');
+      state.plan.attacks.push(attack);
+    }
     const counts=new Map();
     for(const a of state.plan.attacks){counts.set(a.userId,(counts.get(a.userId)||0)+1);a.attackNumber=state.results.filter(r=>r.userId===a.userId).length+counts.get(a.userId);}
-    await saveManualPlan(form.dataset.mode==='edit'?'예정 공격을 수동 변경했습니다.':'예정 공격을 수동 추가했습니다.');
+    await saveManualPlan(form.dataset.mode==='edit'?'예정 공격을 변경했고 같은 사람의 다른 예정 스쿼드도 중복 없이 다시 배치했습니다.':'예정 공격을 수동 추가했습니다.');
     $('attack-detail-dialog').close();
   }catch(error){alert(error.message);}
 });
